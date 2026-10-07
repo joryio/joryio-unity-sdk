@@ -1,0 +1,24 @@
+<!--
+  IL2CPP code stripping removes managed methods nothing in managed code calls.
+
+  That describes every callback here exactly: JoryioCallbackReceiver.OnInAppMessage
+  is invoked BY NAME from native through UnitySendMessage, so the stripper sees an
+  unreferenced private method and deletes it.
+
+  The failure mode this guards against: stripping is off in development builds,
+  so a stripped callback works throughout QA and stops working in the release
+  build - on device, with no exception, looking like a server or device problem
+  rather than a build-configuration one.
+
+  MEASURED on Unity 6000.4: an iOS export with IL2CPP and stripping level High
+  generates the callback bodies even with this file and every [Preserve]
+  removed, because Unity is conservative about MonoBehaviour methods that
+  SendMessage could invoke by name. So this is insurance, not load-bearing
+  today. It stays because the stripper's behaviour is not a contract - a higher
+  stripping level, a newer Unity, or moving the callbacks off a MonoBehaviour
+  would each remove what is protecting them. Re-run the export before deleting
+  it.
+-->
+<linker>
+  <assembly fullname="Joryio.Runtime" preserve="all"/>
+</linker>

@@ -1,0 +1,34 @@
+{
+  "name": "com.joryio.sdk",
+  "version": "1.3.0-beta.1",
+  "displayName": "Joryio",
+  "description": "Analytics, push notifications and in-app messaging for Unity games. Wraps the native Joryio iOS and Android SDKs.",
+  "unity": "2022.3",
+  "keywords": [
+    "analytics",
+    "push",
+    "notifications",
+    "in-app",
+    "messaging",
+    "engagement"
+  ],
+  "author": {
+    "name": "Joryio",
+    "url": "https://joryio.com"
+  },
+  "documentationUrl": "https://docs.joryio.com/developers/sdk/unity-sdk",
+  "changelogUrl": "https://github.com/joryio/joryio-unity-sdk/blob/main/CHANGELOG.md",
+  "license": "SEE LICENSE IN LICENSE",
+  "licensesUrl": "https://github.com/joryio/joryio-unity-sdk/blob/main/LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/joryio/joryio-unity-sdk.git"
+  },
+  "samples": [
+    {
+      "displayName": "In-app renderer",
+      "description": "Draw in-app messages in-engine with your own art, instead of the native overlay. Requires com.unity.ugui.",
+      "path": "Samples~/InAppRenderer"
+    }
+  ]
+}

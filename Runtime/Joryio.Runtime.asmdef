@@ -1,0 +1,11 @@
+{
+  "name": "Joryio.Runtime",
+  "rootNamespace": "Joryio.Runtime",
+  "references": [],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "autoReferenced": true,
+  "noEngineReferences": false
+}

@@ -1,0 +1,16 @@
+<!--
+  Keeps the Input System's UI module in a release build.
+
+  JoryioInAppRenderer creates an EventSystem when the scene has none, and finds
+  InputSystemUIInputModule BY NAME so the sample still compiles in a project
+  without the Input System package. Code stripping cannot see a type reached
+  that way, so at a higher stripping level the module could be removed and
+  message buttons would stop responding - in the release build only.
+
+  ignoreIfMissing: a project without the Input System package builds as before.
+-->
+<linker>
+  <assembly fullname="Unity.InputSystem" ignoreIfMissing="1">
+    <type fullname="UnityEngine.InputSystem.UI.InputSystemUIInputModule" preserve="all"/>
+  </assembly>
+</linker>

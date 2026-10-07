@@ -1,0 +1,8 @@
+{
+  "name": "Joryio.Editor",
+  "rootNamespace": "Joryio.Editor",
+  "references": ["Joryio.Runtime"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "autoReferenced": true
+}

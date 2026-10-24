@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Dependency manifest for the External Dependency Manager for Unity (EDM4U).
+
+  EDM4U resolves these at the GAME's build time - the Android artifact through
+  Gradle and the iOS pod through CocoaPods. What ships inside this package is
+  this file, not the binaries.
+
+  That is deliberate. Several vendors drop prebuilt AARs and frameworks into
+  Assets/Plugins instead, and it is why their SDKs collide: our Android artifact
+  brings okhttp, retrofit, gson, kotlin-stdlib, coroutines and four androidx
+  libraries, and the iOS pod brings SQLite.swift and Stencil. Every one of those
+  is something another vendor's SDK also uses. Resolved by COORDINATE, Gradle
+  reconciles our okhttp 4.12.0 with someone else's 4.9.0. Bundled, both land in
+  the project and the build dies at dex time with duplicate classes, or at link
+  with duplicate symbols on iOS - and the developer who hits it has done nothing
+  wrong and cannot fix it from their side.
+
+  LOCAL DEVELOPMENT, before these are published: both toolchains resolve the
+  same coordinates from a local source, so nothing in this file has to change.
+
+    Android   cd packages/sdk-android && ./gradlew :joryio:publishToMavenLocal
+              then add mavenLocal() to the project's mainTemplate.gradle
+
+    iOS       add to the generated Podfile via a post-process build script:
+              pod 'Joryio', :path => '<repo>/packages/sdk-ios'
+              (CocoaPods resolves a :path pod from source and ignores s.source)
+
+  Keep the versions in step with the rest of the SDKs - sdk-version-parity.spec.ts
+  pins both entries below with the other SDKs and fails the build if any drifts.
+  (They sat at 1.1.0 while every SDK was 1.3.0, because the spec did not list
+  this file: a game would have asked Maven Central and CocoaPods for a version
+  that was never going to be published.)
+-->
+<dependencies>
+  <androidPackages>
+    <androidPackage spec="io.joryio:joryio-android:1.3.0">
+      <repositories>
+        <repository>https://repo.maven.apache.org/maven2</repository>
+      </repositories>
+    </androidPackage>
+    <!--
+      The Java bridge (Plugins/Android) compiles against Kotlin types - every
+      callback it hands the SDK is a kotlin.jvm.functions.Function1 returning
+      kotlin.Unit. Since 1.3.0 round 5 the SDK declares kotlin-stdlib as an
+      `api` dependency (compile scope in its POM), so Gradle already puts it on
+      the bridge's compile classpath. Earlier builds declared it
+      `implementation` (runtime only), and the bridge did not compile
+      ("cannot access Function1"). Kept here as well, at the version the SDK
+      builds with, so a resolver that drops POM scopes still has it; Gradle
+      resolves it up to whatever newer stdlib another plugin brings.
+    -->
+    <androidPackage spec="org.jetbrains.kotlin:kotlin-stdlib:1.9.20">
+      <repositories>
+        <repository>https://repo.maven.apache.org/maven2</repository>
+      </repositories>
+    </androidPackage>
+  </androidPackages>
+
+  <iosPods>
+    <!--
+      The Core subspec, not the whole pod. Joryio/UI carries the SDK's own
+      message views, and a Unity game either lets the native SDK draw (in which
+      case add Joryio/UI) or renders in-engine through SetInAppMessageHandler
+      (in which case those views are dead weight in the binary).
+    -->
+    <iosPod name="Joryio/Core" version="1.3.0" minTargetSdk="14.0">
+      <sources>
+        <source>https://cdn.cocoapods.org/</source>
+      </sources>
+    </iosPod>
+  </iosPods>
+</dependencies>

@@ -1,6 +1,6 @@
 {
   "name": "com.joryio.sdk",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "displayName": "Joryio",
   "description": "Analytics, push notifications and in-app messaging for Unity games. Wraps the native Joryio iOS and Android SDKs.",
   "unity": "2022.3",

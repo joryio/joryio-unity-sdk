@@ -117,7 +117,11 @@ public final class JoryioUnityBridge {
             // Android-only (iOS has no channels): the channel's user-visible
             // name. Was not reachable from Unity at all, so every game showed
             // the English default in system Settings.
-            raw.has("notificationChannelName") ? raw.optString("notificationChannelName", null) : d.getNotificationChannelName()
+            raw.has("notificationChannelName") ? raw.optString("notificationChannelName", null) : d.getNotificationChannelName(),
+            // The game's SetInAppMessageHandler can only come after
+            // Initialize: held until then, the first sync is not drawn
+            // natively in its place.
+            raw.optBoolean("holdInAppMessagesForHandler", d.getHoldInAppMessagesForHandler())
         );
         Joryio.initialize(activity, sdkKey, apiHost, config);
     }

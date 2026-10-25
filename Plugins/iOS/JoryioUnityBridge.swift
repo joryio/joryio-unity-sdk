@@ -306,6 +306,9 @@ public func joryio_enable_in_app_callback(_ capabilitiesJson: UnsafePointer<CCha
             payload["kind"] = "html"
             payload["html"] = html
             payload["css"] = css
+            // The resolved width cap (modal / slideup only); the game draws
+            // the message, so it needs the number.
+            if let maxWidth = campaign.maxWidth { payload["maxWidth"] = maxWidth }
         case let .native(native):
             payload["kind"] = "native"
             if let title = native.title { payload["title"] = title }

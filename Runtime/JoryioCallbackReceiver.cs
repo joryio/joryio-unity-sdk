@@ -167,7 +167,8 @@ namespace Joryio.Runtime
                     buttons,
                     ToStyle(payload.style),
                     Blank(payload.html),
-                    Blank(payload.css));
+                    Blank(payload.css),
+                    payload.maxWidth > 0 ? (float?)payload.maxWidth : null);
             }
             catch (Exception e)
             {
@@ -254,6 +255,9 @@ namespace Joryio.Runtime
             public InAppStylePayload style;
             public string html;
             public string css;
+            // Absent reads as 0 under JsonUtility, which is never a real
+            // width - so 0 means "none" and becomes null on the message.
+            public float maxWidth;
         }
 
         // A CLASS with initialisers, not a struct. JsonUtility cannot express

@@ -6,7 +6,11 @@ Changed: on iOS the native SDK is now a Swift package, not a CocoaPods pod. The 
 
 Later **Append** builds keep the package in step: the Swift package reference is moved to the version of the installed Unity package, and `JoryioUI` is linked when `JORYIO_IOS_UI` is set after the first export. Removing the define needs a Replace build to unlink `JoryioUI`; the build log says so.
 
-No C# API changes. Android is unchanged.
+Added: `JoryioInAppMessage.MaxWidth` for HTML modals and slide-ups (null for every other message), forwarded by both native bridges. When you draw messages yourself, give your web view min(MaxWidth, screen width - your margins) before the content lays out and measure the height from `document.body` (with `body{display:flow-root}`), not the root element, whose height never drops below the web view's own.
+
+Fixed (when the native SDK draws messages: `joryio-android-ui` on Android, the `JORYIO_IOS_UI` define on iOS): HTML in-app messages did not work on Android since 1.3.0, and native HTML modals and slide-ups could grow but never shrink. See the iOS and Android release notes.
+
+No other C# API changes.
 
 ## 1.3.0 - 2026-10-06
 

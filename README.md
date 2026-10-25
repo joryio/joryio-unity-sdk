@@ -23,7 +23,8 @@ The Unity SDK is a thin layer over the native Joryio [iOS](https://github.com/jo
 - Unity 2022.3 LTS or newer (Unity 2021.3 and 2022.1 build Android with JDK 8 and cannot compile against the native Android SDK, which is Java 11 bytecode)
 - iOS 14.0+ and Android 6.0 (API level 23)+
 - Android: Target API Level 34 or higher (Player Settings). The native SDK's AndroidX libraries require compileSdk 34, and Unity's Android build fails below it
-- [External Dependency Manager for Unity](https://github.com/googlesamples/unity-jar-resolver) (EDM4U)
+- Android: [External Dependency Manager for Unity](https://github.com/googlesamples/unity-jar-resolver) (EDM4U). iOS does not use it
+- iOS: Xcode 15 or newer, with network access to `github.com` the first time the exported project builds (Xcode downloads the native SDK as a Swift package)
 - A Joryio workspace with an **iOS app** and an **Android app**, each with its own SDK key (`jry_sdk_ios_...`, `jry_sdk_android_...`) from **Settings → Apps** in the dashboard
 - For Android push: Firebase Cloud Messaging in the game - the Firebase Unity SDK's Messaging package and your `google-services.json`. The native Android SDK compiles against `firebase-messaging` but does not bring it; without it analytics and in-app messaging work and push stays off
 
@@ -34,7 +35,7 @@ The Unity SDK is a thin layer over the native Joryio [iOS](https://github.com/jo
 **From Git** (recommended): in the Package Manager choose **+ → Add package from git URL** and enter the URL with the release tag:
 
 ```
-https://github.com/joryio/joryio-unity-sdk.git#1.3.0
+https://github.com/joryio/joryio-unity-sdk.git#1.3.1
 ```
 
 Or add it to `Packages/manifest.json` yourself:
@@ -42,7 +43,7 @@ Or add it to `Packages/manifest.json` yourself:
 ```json
 {
   "dependencies": {
-    "com.joryio.sdk": "https://github.com/joryio/joryio-unity-sdk.git#1.3.0"
+    "com.joryio.sdk": "https://github.com/joryio/joryio-unity-sdk.git#1.3.1"
   }
 }
 ```
@@ -55,22 +56,22 @@ Use one install method, not both. The Git URL package and `Assets/JoryioSDK` car
 
 The package is not on OpenUPM: OpenUPM lists open-source packages only, and the Joryio SDKs are licensed commercially.
 
-### 2. Resolve the native SDKs with EDM4U
+### 2. The native SDKs
 
-The package ships a dependency manifest (`Editor/JoryioDependencies.xml`), not prebuilt binaries. EDM4U resolves it when you build:
+The package ships no prebuilt native binaries. The native SDKs are resolved by coordinate when you build:
 
 | Platform | Resolved dependency | Through |
 |----------|--------------------|---------|
-| Android | `io.joryio:joryio-android:1.3.0` and `org.jetbrains.kotlin:kotlin-stdlib` (Maven Central) | Gradle |
-| iOS | pod `Joryio/Core` 1.3.0 (CocoaPods) | CocoaPods |
+| Android | `io.joryio:joryio-android:1.3.1` and `org.jetbrains.kotlin:kotlin-stdlib` (Maven Central), from `Editor/JoryioDependencies.xml` | EDM4U and Gradle |
+| iOS | Swift package `https://github.com/joryio/joryio-ios-sdk` at exactly 1.3.1, product `Joryio`, linked into `UnityFramework` | the package's iOS post-build step, then Xcode |
 
-Resolving by coordinate lets Gradle and CocoaPods reconcile libraries the SDK shares with your other plugins (OkHttp, Kotlin, SQLite and so on) instead of colliding at build time. `kotlin-stdlib` is listed because the Java bridge compiles against Kotlin types; Gradle picks the newest one any plugin asks for.
+Resolving by coordinate lets Gradle and Swift Package Manager reconcile libraries the SDK shares with your other plugins (OkHttp, Kotlin, SQLite and so on) instead of colliding at build time. `kotlin-stdlib` is listed because the Java bridge compiles against Kotlin types; Gradle picks the newest one any plugin asks for.
 
-Install EDM4U if your project does not have it yet, then on Android run **Assets → External Dependency Manager → Android Resolver → Resolve**. On iOS, EDM4U runs `pod install` when Unity exports the Xcode project.
+Install EDM4U if your project does not have it yet, then on Android run **Assets → External Dependency Manager → Android Resolver → Resolve**. On iOS there is nothing to resolve in Unity: the post-build step adds the Swift package to the exported Xcode project, and Xcode downloads it the first time it opens or builds the project. CocoaPods is not involved, so the SDK is unaffected by CocoaPods trunk going read-only on 2 December 2026. Upgrading from a version that used the `Joryio/Core` pod: build the iOS player once with **Replace** rather than **Append**, and delete any `<iosPod name="Joryio/...">` line from your own EDM4U files.
 
 ### 3. What the package configures for you
 
-- **Xcode**: Swift version, Swift runtime embedding, the Push Notifications capability, the remote-notification background mode, and `UNITY_USES_REMOTE_NOTIFICATIONS` (without it Unity compiles out the callback that delivers the APNs token). The capability is added to your target's **existing** entitlements file when it has one, so other plugins' entitlements are kept.
+- **Xcode**: the native SDK as a Swift package (`joryio-ios-sdk`, linked into `UnityFramework`), Swift version, Swift runtime embedding, the Push Notifications capability, the remote-notification background mode, and `UNITY_USES_REMOTE_NOTIFICATIONS` (without it Unity compiles out the callback that delivers the APNs token). The capability is added to your target's **existing** entitlements file when it has one, so other plugins' entitlements are kept.
 - **Android**: ProGuard/R8 keep rules for the Java bridge, appended to the generated `proguard-unity.txt`, so a minified release build keeps the methods C# calls by name.
 
 ## Quick start
@@ -163,7 +164,7 @@ Every `JoryioConfig` property is optional. Durations are in seconds, except `Ret
 | `NotificationChannelName` | `string` | `null` (`"Notifications"`) | **Android only.** The notification channel's name in the system's notification settings (Android 8+); pass it localised. iOS has no channels and ignores it |
 | `EnableSdkAuthentication` | `bool` | `false` | Send a signed token with every request (see [SDK authentication](#sdk-authentication)) |
 | `SdkAuthenticationToken` | `string` | none | The token to start with, if you already have one |
-| `AllowHtmlJsInAppMessages` | `bool` | `false` | Let HTML in-app messages drawn by the **native** UI run JavaScript. No effect on messages your own handler renders |
+| `AllowHtmlJsInAppMessages` | `bool` | `false` | Let the **native** UI draw HTML in-app messages. Scripts in them do not run; the native SDK's bridge handles buttons and forms. No effect on messages your own handler renders |
 
 ## Push notifications
 
@@ -263,18 +264,19 @@ The callback always runs once; a failure (including no network) is `ok = false`.
 
 ### Or let the native SDK draw them
 
-The dependency manifest pulls the UI-free native artifacts. For the native SDK to draw messages itself (as an OS-styled overlay), add the UI artifacts in an EDM4U dependencies file of your own, for example `Assets/Editor/JoryioUIDependencies.xml`:
+The package resolves the UI-free native artifacts. For the native SDK to draw messages itself (as an OS-styled overlay), add the UI artifacts:
 
-```xml
-<dependencies>
-  <androidPackages>
-    <androidPackage spec="io.joryio:joryio-android-ui:1.3.0" />
-  </androidPackages>
-  <iosPods>
-    <iosPod name="Joryio/UI" version="1.3.0" minTargetSdk="14.0" />
-  </iosPods>
-</dependencies>
-```
+- **Android**: an EDM4U dependencies file of your own, for example `Assets/Editor/JoryioUIDependencies.xml`:
+
+  ```xml
+  <dependencies>
+    <androidPackages>
+      <androidPackage spec="io.joryio:joryio-android-ui:1.3.1" />
+    </androidPackages>
+  </dependencies>
+  ```
+
+- **iOS**: the scripting define symbol `JORYIO_IOS_UI` (**Player Settings → iOS → Other Settings → Scripting Define Symbols**). The iOS build then links the Swift package's `JoryioUI` product as well.
 
 Other in-app calls: `SyncInAppCampaigns()`, `TrackInAppImpression(campaignId, action, elementId)` (prefer the `Mark...` methods on the message), and two testing helpers that only run with `Debug` on: `ResetDisplayedCampaigns()` and `EvaluateInAppCampaigns()`.
 

@@ -47,6 +47,18 @@ namespace Joryio.Editor
         private static void ConfigureXcode(string buildPath)
         {
             var pbxPath = PBXProject.GetPBXProjectPath(buildPath);
+
+            // An Append build keeps the previous export's package reference;
+            // pin it to this package's version before PBXProject loads the
+            // file, since PBXProject cannot change a reference it did not add.
+            var pbxText = File.ReadAllText(pbxPath);
+            var pinnedText = JoryioXcodePackage.PinExactVersion(pbxText, IosSdkPackageUrl, IosSdkVersion);
+            if (pinnedText != pbxText)
+            {
+                File.WriteAllText(pbxPath, pinnedText);
+                Debug.Log("[Joryio] Pinned the existing " + IosSdkPackageUrl + " reference to " + IosSdkVersion + ".");
+            }
+
             var project = new PBXProject();
             project.ReadFromFile(pbxPath);
 
@@ -60,8 +72,9 @@ namespace Joryio.Editor
             project.SetBuildProperty(mainTarget, "SWIFT_VERSION", "5.9");
             project.SetBuildProperty(mainTarget, "ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES", "YES");
 
-            // Swift needs to find the Joryio module, which CocoaPods puts here.
-            project.AddBuildProperty(frameworkTarget, "SWIFT_INCLUDE_PATHS", "$(PODS_CONFIGURATION_BUILD_DIR)/Joryio");
+            // The native SDK, as a Swift package linked into UnityFramework -
+            // the target the bridge compiles in, so `import Joryio` resolves.
+            AddIosSdkPackage(project, frameworkTarget, pinnedText);
 
             // Read BEFORE writing: the capability manager below sets this
             // property to whatever file it is given.
@@ -72,6 +85,80 @@ namespace Joryio.Editor
             EnableRemoteNotificationCallbacks(buildPath);
             AddPushCapability(buildPath, pbxPath, existingEntitlements);
             Debug.Log("[Joryio] Configured Xcode project for the Swift bridge and push notifications.");
+        }
+
+        /// <summary>The native iOS SDK's Swift package (the public mirror of packages/sdk-ios).</summary>
+        internal const string IosSdkPackageUrl = "https://github.com/joryio/joryio-ios-sdk.git";
+
+        /// <summary>
+        /// The native iOS SDK version this package is built against. Pinned
+        /// EXACTLY, like the Android artifact in JoryioDependencies.xml: the SDKs
+        /// release in lockstep and the bridge calls API of that exact release.
+        /// sdk-version-parity.spec.ts pins it with every other SDK version, and
+        /// the release tool (sdk_release.py set-version) moves it.
+        /// </summary>
+        internal const string IosSdkVersion = "1.3.1";
+
+        /// <summary>
+        /// The package products to link. `Joryio` is tracking, identity and push;
+        /// `JoryioUI` adds the SDK's own in-app message views and WebKit, so it is
+        /// linked only when the game asks for it with the scripting define symbol
+        /// JORYIO_IOS_UI (Player Settings, iOS). A game that renders in-engine
+        /// through SetInAppMessageHandler leaves it out.
+        /// </summary>
+        internal static string[] IosSdkProducts(bool withUI) =>
+            withUI ? new[] { "Joryio", "JoryioUI" } : new[] { "Joryio" };
+
+        private static bool LinkIosUI =>
+#if JORYIO_IOS_UI
+            true;
+#else
+            false;
+#endif
+
+        /// <summary>
+        /// Add the native SDK as a remote Swift package and link its products into
+        /// UnityFramework. Xcode resolves the package when the project is opened
+        /// or built - no CocoaPods and no External Dependency Manager on iOS.
+        ///
+        /// This replaced the `Joryio/Core` pod in JoryioDependencies.xml because
+        /// CocoaPods trunk goes read-only on 2026-12-02: no SDK release after that
+        /// can reach a game through a pod.
+        ///
+        /// An "Append" build re-runs this on a project that already has the
+        /// package. Adding it again would leave two package references, so the
+        /// existing reference is reused (ConfigureXcode has already pinned it to
+        /// IosSdkVersion) and only the products it does not link yet are added:
+        /// setting JORYIO_IOS_UI after the first export used to leave JoryioUI
+        /// out of an Append build without a word. Unlinking is not possible
+        /// through PBXProject, so a JoryioUI left over after the define was
+        /// removed is reported, not removed.
+        /// </summary>
+        internal static bool AddIosSdkPackage(PBXProject project, string targetGuid, string existingProjectText)
+        {
+            var packageGuid = JoryioXcodePackage.FindPackageGuid(existingProjectText, IosSdkPackageUrl);
+            var added = packageGuid == null;
+            var linked = JoryioXcodePackage.LinkedProducts(existingProjectText, packageGuid);
+            if (added)
+            {
+                packageGuid = project.AddRemotePackageReferenceAtVersion(IosSdkPackageUrl, IosSdkVersion);
+            }
+            else
+            {
+                Debug.Log("[Joryio] The Xcode project already references " + IosSdkPackageUrl + "; reusing it.");
+            }
+            foreach (var product in IosSdkProducts(LinkIosUI))
+            {
+                if (linked.Contains(product)) continue;
+                project.AddRemotePackageFrameworkToProject(targetGuid, product, packageGuid, false);
+            }
+            if (!LinkIosUI && linked.Contains("JoryioUI"))
+            {
+                Debug.LogWarning(
+                    "[Joryio] JoryioUI is still linked from an earlier export although JORYIO_IOS_UI is not set. " +
+                    "Make a Replace build (not Append) to remove it.");
+            }
+            return added;
         }
 
         /// <summary>

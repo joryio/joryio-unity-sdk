@@ -83,10 +83,13 @@ namespace Joryio.Runtime
         public int RetryBackoffMs { get; set; } = 1000;
 
         /// <summary>
-        /// Let HTML in-app messages run their own JavaScript when the NATIVE SDK
-        /// draws them (the optional Joryio UI artifacts). Off by default. Has no
-        /// effect on messages your SetInAppMessageHandler renders - your own web
-        /// view decides that.
+        /// Let the NATIVE SDK draw HTML in-app messages (the optional Joryio UI
+        /// artifacts). Off by default. Scripts written into a message do not
+        /// run there - the native SDKs' Content-Security-Policy lets only their
+        /// own bridge execute, and the bridge handles buttons and forms. The
+        /// name keeps "Js" for parity with the native option. Has no effect on
+        /// messages your SetInAppMessageHandler renders - your own web view
+        /// decides what runs there.
         /// </summary>
         public bool AllowHtmlJsInAppMessages { get; set; }
 

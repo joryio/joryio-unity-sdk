@@ -60,6 +60,17 @@ namespace Joryio.Runtime
         // HTML content. Null for a native message.
         public string Html { get; }
         public string Css { get; }
+        /// <summary>
+        /// HTML modal / slideup only: the widest the message may be, in
+        /// points. Give your web view min(MaxWidth, screen width - your
+        /// margins) BEFORE the content lays out, so the author's media
+        /// queries see the real width, and let only the height follow the
+        /// content - measured from document.body (with
+        /// body{display:flow-root}), not the root element, whose scrollHeight
+        /// never drops below the web view's own height. Null for every other
+        /// message.
+        /// </summary>
+        public float? MaxWidth { get; }
 
         public bool IsNative => Kind == "native";
         public bool IsHtml => Kind == "html";
@@ -80,7 +91,8 @@ namespace Joryio.Runtime
             JoryioInAppButton[] buttons,
             JoryioInAppStyle style,
             string html,
-            string css)
+            string css,
+            float? maxWidth)
         {
             Id = id;
             Name = name;
@@ -95,6 +107,7 @@ namespace Joryio.Runtime
             Style = style;
             Html = html;
             Css = css;
+            MaxWidth = maxWidth;
         }
 
         /// <summary>

@@ -216,6 +216,10 @@ public final class JoryioUnityBridge {
                     payload.put("kind", "html");
                     payload.put("html", html.getHtml());
                     payload.put("css", html.getCss());
+                    // The resolved width cap (modal / slideup only); the game
+                    // draws the message, so it needs the number.
+                    Integer maxWidth = campaign.getMaxWidth();
+                    if (maxWidth != null) payload.put("maxWidth", maxWidth.intValue());
                 } else if (content instanceof InAppContent.Native) {
                     InAppContent.Native n = (InAppContent.Native) content;
                     payload.put("kind", "native");

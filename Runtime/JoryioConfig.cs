@@ -94,6 +94,21 @@ namespace Joryio.Runtime
         public bool AllowHtmlJsInAppMessages { get; set; }
 
         /// <summary>
+        /// Your game draws in-app messages itself with
+        /// JoryioSDK.SetInAppMessageHandler, which can only be called after
+        /// Initialize. Turn this on and the native SDK draws nothing until it
+        /// is: a message that is ready meanwhile - the first sync after
+        /// Initialize can finish before your handler is set - is held (not
+        /// drawn, not reported, nothing spent) and handed to your handler the
+        /// moment you set it. ClearInAppMessageHandler instead ends the hold
+        /// and the native SDK draws the held message. Off by default, which
+        /// leaves that window open. The hold covers only the time before the
+        /// first set or clear. Same option, same name, on iOS, Android and
+        /// React Native.
+        /// </summary>
+        public bool HoldInAppMessagesForHandler { get; set; }
+
+        /// <summary>
         /// Turn on SDK authentication: every ingest request carries the token
         /// set here, or later through JoryioSDK.SetSdkAuthenticationToken. Only
         /// for workspaces with SDK authentication enabled in the dashboard.
@@ -168,6 +183,7 @@ namespace Joryio.Runtime
                 { "maxRetries", MaxRetries },
                 { "retryBackoffMs", RetryBackoffMs },
                 { "allowHtmlJsInAppMessages", AllowHtmlJsInAppMessages },
+                { "holdInAppMessagesForHandler", HoldInAppMessagesForHandler },
                 { "enableSdkAuthentication", EnableSdkAuthentication },
                 { "optOut", OptOut },
             };

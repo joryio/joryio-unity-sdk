@@ -97,7 +97,7 @@ namespace Joryio.Editor
         /// sdk-version-parity.spec.ts pins it with every other SDK version, and
         /// the release tool (sdk_release.py set-version) moves it.
         /// </summary>
-        internal const string IosSdkVersion = "1.3.1-beta.2";
+        internal const string IosSdkVersion = "1.3.2-beta.1";
 
         /// <summary>
         /// The package products to link. `Joryio` is tracking, identity and push;

@@ -35,7 +35,7 @@ The Unity SDK is a thin layer over the native Joryio [iOS](https://github.com/jo
 **From Git** (recommended): in the Package Manager choose **+ → Add package from git URL** and enter the URL with the release tag:
 
 ```
-https://github.com/joryio/joryio-unity-sdk.git#1.3.1
+https://github.com/joryio/joryio-unity-sdk.git#1.3.2
 ```
 
 Or add it to `Packages/manifest.json` yourself:
@@ -43,7 +43,7 @@ Or add it to `Packages/manifest.json` yourself:
 ```json
 {
   "dependencies": {
-    "com.joryio.sdk": "https://github.com/joryio/joryio-unity-sdk.git#1.3.1"
+    "com.joryio.sdk": "https://github.com/joryio/joryio-unity-sdk.git#1.3.2"
   }
 }
 ```
@@ -62,8 +62,8 @@ The package ships no prebuilt native binaries. The native SDKs are resolved by c
 
 | Platform | Resolved dependency | Through |
 |----------|--------------------|---------|
-| Android | `io.joryio:joryio-android:1.3.1` and `org.jetbrains.kotlin:kotlin-stdlib` (Maven Central), from `Editor/JoryioDependencies.xml` | EDM4U and Gradle |
-| iOS | Swift package `https://github.com/joryio/joryio-ios-sdk` at exactly 1.3.1, product `Joryio`, linked into `UnityFramework` | the package's iOS post-build step, then Xcode |
+| Android | `io.joryio:joryio-android:1.3.2` and `org.jetbrains.kotlin:kotlin-stdlib` (Maven Central), from `Editor/JoryioDependencies.xml` | EDM4U and Gradle |
+| iOS | Swift package `https://github.com/joryio/joryio-ios-sdk` at exactly 1.3.2, product `Joryio`, linked into `UnityFramework` | the package's iOS post-build step, then Xcode |
 
 Resolving by coordinate lets Gradle and Swift Package Manager reconcile libraries the SDK shares with your other plugins (OkHttp, Kotlin, SQLite and so on) instead of colliding at build time. `kotlin-stdlib` is listed because the Java bridge compiles against Kotlin types; Gradle picks the newest one any plugin asks for.
 
@@ -165,6 +165,7 @@ Every `JoryioConfig` property is optional. Durations are in seconds, except `Ret
 | `EnableSdkAuthentication` | `bool` | `false` | Send a signed token with every request (see [SDK authentication](#sdk-authentication)) |
 | `SdkAuthenticationToken` | `string` | none | The token to start with, if you already have one |
 | `AllowHtmlJsInAppMessages` | `bool` | `false` | Let the **native** UI draw HTML in-app messages. Scripts in them do not run; the native SDK's bridge handles buttons and forms. No effect on messages your own handler renders |
+| `HoldInAppMessagesForHandler` | `bool` | `false` | Your game draws in-app messages with `SetInAppMessageHandler`, which can only come after `Initialize`: hold messages that are ready before it (or until `ClearInAppMessageHandler()`), so none is drawn natively first |
 
 ## Push notifications
 
@@ -187,7 +188,7 @@ The callback runs on the main thread, exactly once.
 
 **Who registers the device.** On **iOS** the SDK registers by itself: it receives the APNs device token from Unity's app controller once permission is granted - nothing to wire in an app delegate. On **Android** it registers by itself only when **Firebase Cloud Messaging is in the game** (the Firebase Unity SDK's Messaging package and `google-services.json`): the native SDK compiles against `firebase-messaging` but does not bring it, so without Firebase there is no FCM token, nothing is registered, and push stays off while analytics and in-app messaging work normally.
 
-**Android activity.** The prompt is shown from your game's activity. Unity 6 builds use `GameActivity` by default; earlier versions (and Unity 6 projects that select it) use the classic `UnityPlayerActivity`. Both are supported by the native SDK 1.3.0 that this package resolves: the callback reports the player's answer after the system dialog closes. Below Android 13 there is no runtime prompt and the callback answers at once with whether notifications are enabled.
+**Android activity.** The prompt is shown from your game's activity. Unity 6 builds use `GameActivity` by default; earlier versions (and Unity 6 projects that select it) use the classic `UnityPlayerActivity`. Both are supported by the native SDK 1.3.2 that this package resolves: the callback reports the player's answer after the system dialog closes. Below Android 13 there is no runtime prompt and the callback answers at once with whether notifications are enabled.
 
 ### If the game already has a push stack
 
@@ -271,7 +272,7 @@ The package resolves the UI-free native artifacts. For the native SDK to draw me
   ```xml
   <dependencies>
     <androidPackages>
-      <androidPackage spec="io.joryio:joryio-android-ui:1.3.1" />
+      <androidPackage spec="io.joryio:joryio-android-ui:1.3.2" />
     </androidPackages>
   </dependencies>
   ```

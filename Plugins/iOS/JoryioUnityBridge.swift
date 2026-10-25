@@ -114,7 +114,13 @@ public func joryio_initialize(
         requestPushPermissionAtLaunch: raw["requestPushPermissionAtLaunch"] as? Bool ?? false,
         // The ONE in-app option that is not about drawing in-engine: it governs
         // the native views (Joryio/UI), when the game lets the SDK draw.
-        inApp: InAppConfig(allowHtmlJsInAppMessages: raw["allowHtmlJsInAppMessages"] as? Bool ?? false),
+        // holdInAppMessagesForHandler: the game's SetInAppMessageHandler can
+        // only come after Initialize, so without it the first sync could be
+        // drawn natively before the handler was set.
+        inApp: InAppConfig(
+            allowHtmlJsInAppMessages: raw["allowHtmlJsInAppMessages"] as? Bool ?? false,
+            holdInAppMessagesForHandler: raw["holdInAppMessagesForHandler"] as? Bool ?? false
+        ),
         maxRetries: raw["maxRetries"] as? Int ?? ConfigDefaults.maxRetries,
         retryBackoffMs: raw["retryBackoffMs"] as? Double ?? ConfigDefaults.retryBackoffMs,
         requestTimeout: raw["requestTimeoutSeconds"] as? TimeInterval ?? ConfigDefaults.requestTimeout,

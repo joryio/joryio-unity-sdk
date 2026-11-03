@@ -118,10 +118,20 @@ namespace Joryio.Runtime
         public override string ToString() => $"{Kind} in-app '{Name}' ({Id})";
 
         /// <summary>
-        /// Call once the message is actually on screen. Reported once per
-        /// message however often it is called: a display is what frequency caps
-        /// and attribution count, so a renderer that redraws (a resize, a
-        /// scene reload) must not turn one message into two impressions.
+        /// Call once the player could have seen the message: after it has been
+        /// on screen for <see cref="JoryioSDK.IN_APP_DISPLAY_DWELL_MS"/> with
+        /// the game in the foreground - or right before MarkClicked /
+        /// MarkDismissed if the player taps or closes it sooner, which shows
+        /// they saw it. If it leaves the screen before then (a scene change,
+        /// the app paused), do not call it: the message is not counted and
+        /// stays eligible. This is the rule the native SDKs apply to the
+        /// messages they draw; a message flashed during a scene change used to
+        /// spend the campaign's frequency cap.
+        ///
+        /// Reported once per message however often it is called: a display is
+        /// what frequency caps and attribution count, so a renderer that
+        /// redraws (a resize, a scene reload) must not turn one message into
+        /// two impressions.
         /// </summary>
         public void MarkDisplayed()
         {

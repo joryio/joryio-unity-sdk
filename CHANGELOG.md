@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.3 - 2026-11-03
+
+Fixed (from the iOS and Android SDKs this package uses): an in-app message the native SDK draws counts as displayed only once someone could have seen it. It is shown only on a screen that is in the foreground and not mid-transition or closing, and `in_app.displayed` is reported - and the campaign's frequency cap spent - only after it has been on screen for `JoryioSDK.IN_APP_DISPLAY_DWELL_MS` (1000 ms) with the app in the foreground. A tap or a close before then counts as seen (displayed first, then the click or dismissal); a message that leaves the screen sooner is not counted and stays eligible.
+
+Added: `JoryioSDK.IN_APP_DISPLAY_DWELL_MS`. If the game draws in-app messages itself (`SetInAppMessageHandler`), call `MarkDisplayed()` by the same rule: after the dwell, or right before `MarkClicked` / `MarkDismissed` if the player acts sooner - not as the message is first drawn. No bridge or wire changes.
+
 ## 1.3.2 - 2026-10-25
 
 Added: `JoryioConfig.HoldInAppMessagesForHandler` (off by default; wire key `holdInAppMessagesForHandler`). `SetInAppMessageHandler` can only be called after `Initialize`, and the first sync could finish before it, so the native SDK drew that message itself when its UI was in the build. With the option on, a message that is ready before the handler is set is held - not drawn, not reported, nothing spent - and handed to the handler when it is set; `ClearInAppMessageHandler()` instead ends the hold and the native SDK draws the held message. The same option, by the same name, on iOS, Android and React Native.

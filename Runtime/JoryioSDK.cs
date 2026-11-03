@@ -32,7 +32,20 @@ namespace Joryio.Runtime
         /// Android SDK once logged a hardcoded "v1.0.0" while it was on 1.1.0 -
         /// a second copy is how that happens.
         /// </summary>
-        public const string SdkVersion = "1.3.2";
+        public const string SdkVersion = "1.3.3";
+
+        /// <summary>
+        /// How long (ms) an in-app message must have been on screen before it
+        /// counts as displayed - the same name and value on every Joryio SDK.
+        /// Messages the native SDK draws follow it by themselves:
+        /// in_app.displayed is reported, and the frequency cap spent, only
+        /// after the message has been visible this long with the app in the
+        /// foreground (a tap or a close before then counts as seen); one that
+        /// leaves the screen sooner is not counted and stays eligible. For a
+        /// message the game draws, call <see cref="JoryioInAppMessage.MarkDisplayed"/>
+        /// by the same rule.
+        /// </summary>
+        public const int IN_APP_DISPLAY_DWELL_MS = 1000;
 
         private static IJoryioNative _native;
         private static bool _initialized;

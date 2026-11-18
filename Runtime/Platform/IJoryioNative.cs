@@ -23,6 +23,8 @@ namespace Joryio.Runtime.Platform
         void TrackScreen(string screenName, string propertiesJson);
         void Identify(string userId);
         void Reset();
+        /// <summary>Answers "true" (adopted) or "false" (refused) through <paramref name="requestId"/>.</summary>
+        void ResetTo(string anonymousId, int requestId);
         void Flush();
 
         string GetUserId();
@@ -30,6 +32,9 @@ namespace Joryio.Runtime.Platform
 
         /// <summary>Attach a labelled alias; works for an anonymous player too.</summary>
         void AddAlias(string aliasLabel, string aliasName);
+
+        /// <summary>Click-link identity: the URL that opened the app, passed to native unchanged (native reads jr_t).</summary>
+        void IdentifyFromLink(string url);
         void SetAttributes(string attributesJson);
         void SetAttribute(string key, string valueJson);
         void IncrementAttribute(string key, double by);

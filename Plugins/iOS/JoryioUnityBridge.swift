@@ -250,6 +250,12 @@ public func joryio_reset() {
     Joryio.shared.reset()
 }
 
+/// Replies "true" when the id was adopted, "false" when it was refused (a plain reset).
+@_cdecl("joryio_reset_to")
+public func joryio_reset_to(_ anonymousId: UnsafePointer<CChar>?, _ requestId: Int32) {
+    Joryio.shared.resetTo(str(anonymousId)) { adopted in reply(requestId, adopted ? "true" : "false") }
+}
+
 @_cdecl("joryio_flush")
 public func joryio_flush() {
     Joryio.shared.flush()
@@ -408,6 +414,7 @@ public func joryio_submit_in_app_form(
         if let m = r.message { body["message"] = m }
         if let redirect = r.redirect { body["redirect"] = redirect }
         if let errors = r.errors { body["errors"] = errors }
+        if let reason = r.reason { body["reason"] = reason }
         reply(requestId, jsonString(body))
     }
 }
@@ -426,6 +433,15 @@ public func joryio_evaluate_in_app_campaigns() {
 @_cdecl("joryio_add_alias")
 public func joryio_add_alias(_ aliasLabel: UnsafePointer<CChar>?, _ aliasName: UnsafePointer<CChar>?) {
     Joryio.shared.addAlias(str(aliasLabel), name: str(aliasName))
+}
+
+/// Click-link identity: the URL that opened the app, passed through to the
+/// native SDK unchanged. Native reads `jr_t` and applies the rules
+/// (identified, opted out, consent, once per token).
+@_cdecl("joryio_identify_from_link")
+public func joryio_identify_from_link(_ url: UnsafePointer<CChar>?) {
+    guard let parsed = URL(string: str(url)) else { return }
+    Joryio.shared.identifyFromLink(parsed)
 }
 
 @_cdecl("joryio_set_attributes")

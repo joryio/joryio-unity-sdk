@@ -160,6 +160,14 @@ public final class JoryioUnityBridge {
         Joryio.getInstance().reset();
     }
 
+    /** Replies "true" when the id was adopted, "false" when it was refused (a plain reset). */
+    public static void resetTo(String anonymousId, final int requestId) {
+        Joryio.getInstance().resetTo(anonymousId, adopted -> {
+            reply(requestId, adopted ? "true" : "false");
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
     public static void flush() {
         Joryio.getInstance().flush();
     }
@@ -321,6 +329,15 @@ public final class JoryioUnityBridge {
     /** A labelled alias. Works for an anonymous player too (SDK contract 2). */
     public static void addAlias(String aliasLabel, String aliasName) {
         Joryio.getInstance().addAlias(aliasLabel, aliasName);
+    }
+
+    /**
+     * Click-link identity: the URL that opened the app, passed through to the
+     * native SDK unchanged. Native reads {@code jr_t} and applies the rules
+     * (identified, opted out, consent, once per token).
+     */
+    public static void identifyFromLink(String url) {
+        Joryio.getInstance().identifyFromLink(url);
     }
 
     public static void setAttributes(String attributesJson) {

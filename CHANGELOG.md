@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0 - 2026-11-18
+
+Added: `JoryioSDK.ResetTo(anonymousId)`, through both native bridges (the native SDK checks the id; a null id crosses as empty, which is refused) - everything `Reset()` does, then the anonymous id you pass instead of a random one, for an app that keeps its own visitor id (BACKLOG D366). The id must be 8 to 255 letters, digits, `.`, `_`, `:` or `-`, must not have the shape of a Joryio profile id (24 lowercase hex) and must not be the user id the SDK holds; a refused id is logged and the call is a plain `Reset()` (a random id), so a logout is never skipped. The same name and rule on all five SDKs. No wire changes: the server sees an ordinary anonymous id.
+
+Changed (BACKLOG D366, before any release of resetTo): it also refuses the anonymous id the SDK holds while a user is signed in - that id is tied to the signed-in person's profile, and adopting it would hand their in-app messages, events, form attribution and push subscription to the next person on a shared device (a random id is used instead). `ResetTo(anonymousId, Action<bool> onResult = null)`: `true` adopted, `false` refused or not run; both native bridges answer through the request id. The same on all five SDKs.
+
+Changed (BACKLOG D366): `resetTo` also refuses the last 20 anonymous ids this device held for a signed-in user when a reset signed them out (stored locally, newest kept; `wipeData()` forgets them) - a random id is used and it answers `false`, the same message and cap on all five SDKs. Unchanged: a call that never reaches native answers `false`, once - now the same on Android, iOS and React Native.
+
+Added: `JoryioSDK.IdentifyFromLink(string url)`, through both native bridges (the url is passed through unchanged; native reads the token and applies the rules) - click-link identity. `Initialize` also checks `Application.absoluteURL` (the link that launched the game) and listens to `Application.deepLinkActivated`, so a game with deep links set up needs no code. When the URL carries the `jr_t` token a tracked Joryio message link adds, the player is attached to the contact the message was sent to. Nothing happens when a user is identified, the player opted out or consent is denied; while consent is pending the token is held in memory and sent when consent is granted. A call before `Initialize` is ignored, like other data calls (the launch URL is read by `Initialize`). The same name, parameter, path and body on all five SDKs.
+
 ## 1.3.3 - 2026-11-03
 
 Fixed (from the iOS and Android SDKs this package uses): an in-app message the native SDK draws counts as displayed only once someone could have seen it. It is shown only on a screen that is in the foreground and not mid-transition or closing, and `in_app.displayed` is reported - and the campaign's frequency cap spent - only after it has been on screen for `JoryioSDK.IN_APP_DISPLAY_DWELL_MS` (1000 ms) with the app in the foreground. A tap or a close before then counts as seen (displayed first, then the click or dismissal); a message that leaves the screen sooner is not counted and stays eligible.

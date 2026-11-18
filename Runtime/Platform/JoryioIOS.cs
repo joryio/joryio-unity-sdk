@@ -25,6 +25,7 @@ namespace Joryio.Runtime.Platform
         [DllImport("__Internal")] private static extern void joryio_track_screen(string name, string propsJson);
         [DllImport("__Internal")] private static extern void joryio_identify(string userId);
         [DllImport("__Internal")] private static extern void joryio_reset();
+        [DllImport("__Internal")] private static extern void joryio_reset_to(string anonymousId, int requestId);
         [DllImport("__Internal")] private static extern void joryio_flush();
         [DllImport("__Internal")] private static extern IntPtr joryio_get_user_id();
         [DllImport("__Internal")] private static extern IntPtr joryio_get_anonymous_id();
@@ -33,6 +34,7 @@ namespace Joryio.Runtime.Platform
         [DllImport("__Internal")] private static extern void joryio_clear_in_app_callback();
         [DllImport("__Internal")] private static extern void joryio_track_in_app_impression(string campaignId, string action, string elementId);
         [DllImport("__Internal")] private static extern void joryio_add_alias(string aliasLabel, string aliasName);
+        [DllImport("__Internal")] private static extern void joryio_identify_from_link(string url);
         [DllImport("__Internal")] private static extern void joryio_set_attributes(string json);
         [DllImport("__Internal")] private static extern void joryio_set_attribute(string key, string valueJson);
         [DllImport("__Internal")] private static extern void joryio_increment_attribute(string key, double by);
@@ -87,10 +89,12 @@ namespace Joryio.Runtime.Platform
         public void TrackScreen(string screenName, string propertiesJson) => joryio_track_screen(screenName, propertiesJson);
         public void Identify(string userId) => joryio_identify(userId);
         public void Reset() => joryio_reset();
+        public void ResetTo(string anonymousId, int requestId) => joryio_reset_to(anonymousId, requestId);
         public void Flush() => joryio_flush();
         public string GetUserId() => Consume(joryio_get_user_id());
         public string GetAnonymousId() => Consume(joryio_get_anonymous_id());
         public void AddAlias(string aliasLabel, string aliasName) => joryio_add_alias(aliasLabel, aliasName);
+        public void IdentifyFromLink(string url) => joryio_identify_from_link(url);
         public void SetAttributes(string attributesJson) => joryio_set_attributes(attributesJson);
         public void SetAttribute(string key, string valueJson) => joryio_set_attribute(key, valueJson);
         public void IncrementAttribute(string key, double by) => joryio_increment_attribute(key, by);

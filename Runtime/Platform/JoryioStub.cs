@@ -30,10 +30,12 @@ namespace Joryio.Runtime.Platform
         public void TrackScreen(string screenName, string propertiesJson) => WarnOnce();
         public void Identify(string userId) => WarnOnce();
         public void Reset() => WarnOnce();
+        public void ResetTo(string anonymousId, int requestId) { WarnOnce(); JoryioCallbackReceiver.Resolve(requestId, "false"); }
         public void Flush() => WarnOnce();
         public string GetUserId() => string.Empty;
         public string GetAnonymousId() => string.Empty;
         public void AddAlias(string aliasLabel, string aliasName) => WarnOnce();
+        public void IdentifyFromLink(string url) => WarnOnce();
         public void SetAttributes(string attributesJson) => WarnOnce();
         public void SetAttribute(string key, string valueJson) => WarnOnce();
         public void IncrementAttribute(string key, double by) => WarnOnce();

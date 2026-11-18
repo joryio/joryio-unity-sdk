@@ -632,7 +632,7 @@ namespace Joryio.Runtime
         private static readonly string[] DataMethods =
         {
             nameof(Track), nameof(TrackScreen), nameof(SetAttributes), nameof(SetAttribute),
-            nameof(IncrementAttribute), nameof(UnsetAttribute), nameof(AddAlias), nameof(Flush),
+            nameof(IncrementAttribute), nameof(UnsetAttribute), nameof(AddAlias), nameof(IdentifyFromLink), nameof(Flush),
             nameof(TrackInAppImpression), nameof(SubmitInAppForm), nameof(SyncInAppCampaigns),
             nameof(EvaluateInAppCampaigns), nameof(ResetDisplayedCampaigns), nameof(UpdateBadgeCount),
             nameof(ClearBadge), nameof(ReportPushDelivered), nameof(TrackPushClick),

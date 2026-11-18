@@ -32,7 +32,7 @@ namespace Joryio.Runtime
         /// Android SDK once logged a hardcoded "v1.0.0" while it was on 1.1.0 -
         /// a second copy is how that happens.
         /// </summary>
-        public const string SdkVersion = "1.3.3";
+        public const string SdkVersion = "1.4.0";
 
         /// <summary>
         /// How long (ms) an in-app message must have been on screen before it
@@ -153,6 +153,7 @@ namespace Joryio.Runtime
                 // Starts the native SDK and sends what was held before
                 // Initialize, in order (JoryioHeldCalls.cs).
                 StartNative(sdkKey, apiHost, config);
+                if (_initialized) WatchDeepLinks();
             }
             catch (Exception e)
             {
@@ -284,6 +285,31 @@ namespace Joryio.Runtime
             Call(nameof(Reset), () => Native.Reset());
         }
 
+        /// <summary>
+        /// Reset, then adopt <paramref name="anonymousId"/> instead of a new
+        /// random id - for a game that keeps its own player id, so the SDK and
+        /// the game stay ONE visitor after a logout (BACKLOG D366). The native
+        /// SDK checks the id: 8 to 255 letters, digits, '.', '_', ':' or '-',
+        /// not the shape of a Joryio profile id (24 lowercase hex), not the
+        /// signed-in user id, and not the anonymous id held while a player is
+        /// signed in (that id is tied to their profile). A missing or refused
+        /// id is a plain Reset (a random id), so a logout is never skipped.
+        /// <paramref name="onResult"/> runs once on the main thread: true when
+        /// the id was adopted, false when it was refused or the call did not
+        /// run (not initialized, or dropped).
+        /// </summary>
+        public static void ResetTo(string anonymousId, Action<bool> onResult = null)
+        {
+            var settle = Once(onResult);
+            if (!Ready(nameof(ResetTo))) { settle(false); return; }
+            RetrySavedHeldCalls();
+            // Never a null across JNI (AndroidJavaException); empty is refused natively = Reset.
+            var id = anonymousId ?? string.Empty;
+            Call(nameof(ResetTo),
+                () => Ask(nameof(ResetTo), rid => Native.ResetTo(id, rid), v => settle(v == "true"), () => settle(false)),
+                onDropped: () => settle(false));
+        }
+
         public static void Flush()
         {
             if (!Ready(nameof(Flush))) return;
@@ -317,6 +343,78 @@ namespace Joryio.Runtime
         {
             if (!Ready(nameof(AddAlias), label, name)) return;
             Call(nameof(AddAlias), () => Native.AddAlias(label, name));
+        }
+
+        // ── Click-link identity ──────────────────────────────────────────────
+
+        /// <summary>The query parameter a tracked message link carries; the same on every SDK.</summary>
+        public const string ClickIdentityParam = "jr_t";
+
+        /// <summary>
+        /// Recognise the player who clicked a tracked link in a Joryio message.
+        /// When the URL carries the jr_t token the click redirect added, this
+        /// player's anonymous profile is attached to the contact the message
+        /// was sent to. Fire-and-forget; a URL without jr_t does nothing.
+        ///
+        /// Initialize already does this for you: it checks
+        /// Application.absoluteURL (the link that launched the game) and
+        /// listens to Application.deepLinkActivated. Call it yourself only for
+        /// a URL that reaches the game another way.
+        ///
+        /// Nothing happens when the player is identified, has opted out or
+        /// consent is denied; while consent is pending the token is held in
+        /// memory and sent when consent is granted. The same token is sent once
+        /// per launch. Before Initialize the call is ignored (as other data
+        /// calls are) - the launch URL is read by Initialize itself.
+        /// </summary>
+        /// <param name="url">The deep link / universal link / app link URL.</param>
+        public static void IdentifyFromLink(string url)
+        {
+            if (!HasClickIdentityParam(url)) return;
+            if (!Ready(nameof(IdentifyFromLink), url)) return;
+            Call(nameof(IdentifyFromLink), () => Native.IdentifyFromLink(url));
+        }
+
+        /// <summary>Whether the URL has a jr_t query parameter at all; native validates the value.</summary>
+        internal static bool HasClickIdentityParam(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return false;
+            var hash = url.IndexOf('#');
+            if (hash >= 0) url = url.Substring(0, hash);
+            var q = url.IndexOf('?');
+            if (q < 0) return false;
+            foreach (var pair in url.Substring(q + 1).Split('&'))
+            {
+                var eq = pair.IndexOf('=');
+                if (eq > 0 && pair.Substring(0, eq) == ClickIdentityParam) return true;
+            }
+            return false;
+        }
+
+        private static bool _watchingDeepLinks;
+
+        /// <summary>
+        /// At Initialize: the link that launched the game, and every link that
+        /// reaches it while it runs. Guarded: outside a player (the managed
+        /// tests) the engine calls are not available, and a deep-link hook is
+        /// never worth failing Initialize for.
+        /// </summary>
+        private static void WatchDeepLinks()
+        {
+            try
+            {
+                if (!_watchingDeepLinks)
+                {
+                    Application.deepLinkActivated += IdentifyFromLink;
+                    _watchingDeepLinks = true;
+                }
+                var launchUrl = Application.absoluteURL;
+                if (!string.IsNullOrEmpty(launchUrl)) IdentifyFromLink(launchUrl);
+            }
+            catch (Exception e)
+            {
+                Debug.Log($"[Joryio] Deep links are not watched here: {e.Message}");
+            }
         }
 
         /// <summary>

@@ -33,10 +33,12 @@ namespace Joryio.Runtime.Platform
 
         public void Identify(string userId) => Bridge.CallStatic("identify", userId);
         public void Reset() => Bridge.CallStatic("reset");
+        public void ResetTo(string anonymousId, int requestId) => Bridge.CallStatic("resetTo", anonymousId, requestId);
         public void Flush() => Bridge.CallStatic("flush");
         public string GetUserId() => Bridge.CallStatic<string>("getUserId");
         public string GetAnonymousId() => Bridge.CallStatic<string>("getAnonymousId");
         public void AddAlias(string aliasLabel, string aliasName) => Bridge.CallStatic("addAlias", aliasLabel, aliasName);
+        public void IdentifyFromLink(string url) => Bridge.CallStatic("identifyFromLink", url);
         public void SetAttributes(string attributesJson) => Bridge.CallStatic("setAttributes", attributesJson);
         public void SetAttribute(string key, string valueJson) => Bridge.CallStatic("setAttribute", key, valueJson);
         public void IncrementAttribute(string key, double by) => Bridge.CallStatic("incrementAttribute", key, by);

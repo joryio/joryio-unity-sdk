@@ -353,8 +353,10 @@ namespace Joryio.Runtime
         /// <summary>
         /// Recognise the player who clicked a tracked link in a Joryio message.
         /// When the URL carries the jr_t token the click redirect added, this
-        /// player's anonymous profile is attached to the contact the message
-        /// was sent to. Fire-and-forget; a URL without jr_t does nothing.
+        /// game's events are attributed to the contact the message was sent
+        /// to. Attribution only: the player is not identified and this profile
+        /// is never merged into the contact (only Identify does that).
+        /// Fire-and-forget; a URL without jr_t does nothing.
         ///
         /// Initialize already does this for you: it checks
         /// Application.absoluteURL (the link that launched the game) and

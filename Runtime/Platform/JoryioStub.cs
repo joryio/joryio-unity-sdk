@@ -34,6 +34,15 @@ namespace Joryio.Runtime.Platform
         public void Flush() => WarnOnce();
         public string GetUserId() => string.Empty;
         public string GetAnonymousId() => string.Empty;
+        // No native SDK: every getter answers the game's default.
+        public string GetFlag(string key, string defaultJson) => defaultJson;
+        public bool GetBoolFlag(string key, bool defaultValue) => defaultValue;
+        public string GetStringFlag(string key, string defaultValue) => defaultValue;
+        public double GetNumberFlag(string key, double defaultValue) => defaultValue;
+        public string GetJsonFlag(string key, string defaultJson) => defaultJson;
+        public string GetAllFlags() => "{}";
+        public void RefreshFlags(int requestId) { WarnOnce(); JoryioCallbackReceiver.Resolve(requestId, "true"); }
+        public void EnableFlagsUpdates() { }
         public void AddAlias(string aliasLabel, string aliasName) => WarnOnce();
         public void IdentifyFromLink(string url) => WarnOnce();
         public void SetAttributes(string attributesJson) => WarnOnce();
@@ -74,6 +83,21 @@ namespace Joryio.Runtime.Platform
         public void EnableInAppCallback(string capabilitiesJson) => WarnOnce();
         public void ClearInAppCallback() { }
         public void TrackInAppImpression(string campaignId, string action, string elementId) => WarnOnce();
+        public void GetPlacements(string keysJson, int requestId) { WarnOnce(); JoryioCallbackReceiver.Resolve(requestId, "{}"); }
+        public void RefreshPlacements(string keysJson) => WarnOnce();
+        public void EnablePlacementsUpdates() => WarnOnce();
+        public void DisablePlacementsUpdates() => WarnOnce();
+        public void MarkPlacement(string placementKey, string itemId, string action, string elementId) => WarnOnce();
+        public void GetCards(string cursor, int requestId) { WarnOnce(); JoryioCallbackReceiver.Resolve(requestId, "{\"cards\":[],\"unreadCount\":0,\"nextCursor\":null,\"stateScope\":\"server\"}"); }
+        public int GetUnreadCardCount() { WarnOnce(); return 0; }
+        public void MarkCard(string cardId, string action) => WarnOnce();
+        public void RefreshCards() => WarnOnce();
+        public void EnableCardsUpdates() => WarnOnce();
+        public void DisableCardsUpdates() => WarnOnce();
+        // No native SDK opens links in the Editor: nothing reaches the handler.
+        public void EnableLinkHandler() => WarnOnce();
+        public void DisableLinkHandler() { }
+        public void CompleteLink(string linkId, bool handled) { }
         public void SubmitInAppForm(string campaignId, string valuesJson, int requestId) { WarnOnce(); JoryioCallbackReceiver.Resolve(requestId, "{\"ok\":false,\"message\":\"Editor stub\"}"); }
         public void Ecommerce(string method, string payloadJson) => WarnOnce();
     }

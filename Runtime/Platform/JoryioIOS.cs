@@ -22,6 +22,20 @@ namespace Joryio.Runtime.Platform
         [DllImport("__Internal")] private static extern void joryio_initialize(string sdkKey, string apiHost, string configJson);
         [DllImport("__Internal")] private static extern void joryio_set_callback_target(string name);
         [DllImport("__Internal")] private static extern void joryio_track(string name, string propsJson);
+        [DllImport("__Internal")] private static extern void joryio_get_placements(string keysJson, int requestId);
+        [DllImport("__Internal")] private static extern void joryio_refresh_placements(string keysJson);
+        [DllImport("__Internal")] private static extern void joryio_enable_placements_updates();
+        [DllImport("__Internal")] private static extern void joryio_disable_placements_updates();
+        [DllImport("__Internal")] private static extern void joryio_mark_placement(string placementKey, string itemId, string action, string elementId);
+        [DllImport("__Internal")] private static extern void joryio_get_cards(string cursor, int requestId);
+        [DllImport("__Internal")] private static extern int joryio_get_unread_card_count();
+        [DllImport("__Internal")] private static extern void joryio_mark_card(string cardId, string action);
+        [DllImport("__Internal")] private static extern void joryio_refresh_cards();
+        [DllImport("__Internal")] private static extern void joryio_enable_cards_updates();
+        [DllImport("__Internal")] private static extern void joryio_disable_cards_updates();
+        [DllImport("__Internal")] private static extern void joryio_enable_link_handler();
+        [DllImport("__Internal")] private static extern void joryio_disable_link_handler();
+        [DllImport("__Internal")] private static extern void joryio_complete_link(string linkId, bool handled);
         [DllImport("__Internal")] private static extern void joryio_track_screen(string name, string propsJson);
         [DllImport("__Internal")] private static extern void joryio_identify(string userId);
         [DllImport("__Internal")] private static extern void joryio_reset();
@@ -49,6 +63,16 @@ namespace Joryio.Runtime.Platform
         [return: MarshalAs(UnmanagedType.I1)]
         private static extern bool joryio_is_user_opted_out();
         [DllImport("__Internal")] private static extern void joryio_wipe_data();
+        [DllImport("__Internal")] private static extern IntPtr joryio_get_flag(string key, string defaultJson);
+        [DllImport("__Internal")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        private static extern bool joryio_get_bool_flag(string key, [MarshalAs(UnmanagedType.I1)] bool defaultValue);
+        [DllImport("__Internal")] private static extern IntPtr joryio_get_string_flag(string key, string defaultValue);
+        [DllImport("__Internal")] private static extern double joryio_get_number_flag(string key, double defaultValue);
+        [DllImport("__Internal")] private static extern IntPtr joryio_get_json_flag(string key, string defaultJson);
+        [DllImport("__Internal")] private static extern IntPtr joryio_get_all_flags();
+        [DllImport("__Internal")] private static extern void joryio_refresh_flags(int requestId);
+        [DllImport("__Internal")] private static extern void joryio_enable_flags_updates();
         [DllImport("__Internal")] private static extern IntPtr joryio_get_tracking_consent();
         [DllImport("__Internal")] private static extern void joryio_register_push_token(string token, int requestId);
         [DllImport("__Internal")] private static extern void joryio_report_push_delivered(string trackingId);
@@ -125,6 +149,14 @@ namespace Joryio.Runtime.Platform
         public void UpdateBadgeCount(int count) => joryio_update_badge_count(count);
         public void ClearBadge() => joryio_clear_badge();
         public string GetSessionId() => Consume(joryio_get_session_id());
+        public string GetFlag(string key, string defaultJson) => Consume(joryio_get_flag(key, defaultJson));
+        public bool GetBoolFlag(string key, bool defaultValue) => joryio_get_bool_flag(key, defaultValue);
+        public string GetStringFlag(string key, string defaultValue) => Consume(joryio_get_string_flag(key, defaultValue));
+        public double GetNumberFlag(string key, double defaultValue) => joryio_get_number_flag(key, defaultValue);
+        public string GetJsonFlag(string key, string defaultJson) => Consume(joryio_get_json_flag(key, defaultJson));
+        public string GetAllFlags() => Consume(joryio_get_all_flags());
+        public void RefreshFlags(int requestId) => joryio_refresh_flags(requestId);
+        public void EnableFlagsUpdates() => joryio_enable_flags_updates();
         public string GetSessionInfo() => Consume(joryio_get_session_info());
         public void SetSdkAuthenticationToken(string token) => joryio_set_sdk_authentication_token(token);
         public void EnableSdkAuthenticationErrors() => joryio_enable_sdk_authentication_errors();
@@ -134,6 +166,20 @@ namespace Joryio.Runtime.Platform
         public void EnableInAppCallback(string capabilitiesJson) => joryio_enable_in_app_callback(capabilitiesJson);
         public void ClearInAppCallback() => joryio_clear_in_app_callback();
         public void TrackInAppImpression(string campaignId, string action, string elementId) => joryio_track_in_app_impression(campaignId, action, elementId);
+        public void GetPlacements(string keysJson, int requestId) => joryio_get_placements(keysJson, requestId);
+        public void RefreshPlacements(string keysJson) => joryio_refresh_placements(keysJson ?? string.Empty);
+        public void EnablePlacementsUpdates() => joryio_enable_placements_updates();
+        public void DisablePlacementsUpdates() => joryio_disable_placements_updates();
+        public void MarkPlacement(string placementKey, string itemId, string action, string elementId) => joryio_mark_placement(placementKey, itemId ?? string.Empty, action, elementId ?? string.Empty);
+        public void GetCards(string cursor, int requestId) => joryio_get_cards(cursor ?? string.Empty, requestId);
+        public int GetUnreadCardCount() => joryio_get_unread_card_count();
+        public void MarkCard(string cardId, string action) => joryio_mark_card(cardId ?? string.Empty, action ?? string.Empty);
+        public void RefreshCards() => joryio_refresh_cards();
+        public void EnableCardsUpdates() => joryio_enable_cards_updates();
+        public void DisableCardsUpdates() => joryio_disable_cards_updates();
+        public void EnableLinkHandler() => joryio_enable_link_handler();
+        public void DisableLinkHandler() => joryio_disable_link_handler();
+        public void CompleteLink(string linkId, bool handled) => joryio_complete_link(linkId ?? string.Empty, handled);
         public void SubmitInAppForm(string campaignId, string valuesJson, int requestId) => joryio_submit_in_app_form(campaignId, valuesJson, requestId);
         public void Ecommerce(string method, string payloadJson) => joryio_ecommerce(method, payloadJson);
     }

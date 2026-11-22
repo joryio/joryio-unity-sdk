@@ -105,7 +105,55 @@ namespace Joryio.Runtime.Platform
         /// <summary>Answers through the request id with a JSON InAppFormSubmitResponse.</summary>
         void SubmitInAppForm(string campaignId, string valuesJson, int requestId);
 
+        // Feature flags (BACKLOG D446). Every getter carries the game's
+        // default to the native getter, which answers value-or-default and
+        // logs the exposure. Values of any type cross as JSON text.
+        string GetFlag(string key, string defaultJson);
+        bool GetBoolFlag(string key, bool defaultValue);
+        string GetStringFlag(string key, string defaultValue);
+        double GetNumberFlag(string key, double defaultValue);
+        string GetJsonFlag(string key, string defaultJson);
+        /// <summary>JSON object, key -> value. Logs no exposure.</summary>
+        string GetAllFlags();
+        /// <summary>Answers "true" through <paramref name="requestId"/> when the answer is in.</summary>
+        void RefreshFlags(int requestId);
+        /// <summary>Start OnFlagsUpdated callbacks (one native subscription; C# fans out).</summary>
+        void EnableFlagsUpdates();
+
         /// <summary>One entry point for every e-commerce event; method is the tracker's name.</summary>
         void Ecommerce(string method, string payloadJson);
+
+        // Placements (D444). The native SDK fetches, caches and reports; these
+        // carry JSON across. keysJson: a JSON array of keys ("" = all, refresh only).
+
+        /// <summary>Answers through the request id with the placements JSON (Placement.toJson per key).</summary>
+        void GetPlacements(string keysJson, int requestId);
+        void RefreshPlacements(string keysJson);
+        /// <summary>Native updates go to JoryioCallbackReceiver.OnPlacementsUpdated.</summary>
+        void EnablePlacementsUpdates();
+        void DisablePlacementsUpdates();
+        /// <summary>action: displayed | clicked | dismissed (an item) or control (the holdout spot).</summary>
+        void MarkPlacement(string placementKey, string itemId, string action, string elementId);
+
+        // Content cards (D444 Phase 3). The native SDK fetches, caches and reports.
+
+        /// <summary>Answers through the request id with the feed JSON (CardFeed.toJson). cursor: "" for the feed, a nextCursor for the next page.</summary>
+        void GetCards(string cursor, int requestId);
+        /// <summary>From the native cache, never a network call.</summary>
+        int GetUnreadCardCount();
+        /// <summary>action: viewed | read | clicked | dismissed (the wire values).</summary>
+        void MarkCard(string cardId, string action);
+        void RefreshCards();
+        /// <summary>Native updates go to JoryioCallbackReceiver.OnCardsUpdated.</summary>
+        void EnableCardsUpdates();
+        void DisableCardsUpdates();
+
+        // Links (SetLinkHandler). The native handler is app-wide.
+
+        /// <summary>Every link native is about to open goes to JoryioCallbackReceiver.OnLink and waits for CompleteLink.</summary>
+        void EnableLinkHandler();
+        void DisableLinkHandler();
+        /// <summary>handled false: native opens the link as it does without a handler.</summary>
+        void CompleteLink(string linkId, bool handled);
     }
 }

@@ -96,6 +96,11 @@ namespace Joryio.Runtime
             _consentBeforeInit = null;
             _lastConsent = null;
             _quietStartConsent = null;
+            lock (FlagsLock)
+            {
+                FlagsListeners.Clear();
+                _flagsUpdatesEnabled = false;
+            }
             lock (HeldLock)
             {
                 ResetHeldState();
@@ -154,6 +159,8 @@ namespace Joryio.Runtime
                 // Initialize, in order (JoryioHeldCalls.cs).
                 StartNative(sdkKey, apiHost, config);
                 if (_initialized) WatchDeepLinks();
+                // Listeners added before Initialize start hearing updates now.
+                if (_initialized) EnableFlagsUpdatesIfListened();
             }
             catch (Exception e)
             {
@@ -1012,6 +1019,145 @@ namespace Joryio.Runtime
             if (handler != null && first)
             {
                 Call(nameof(SetSdkAuthenticationErrorHandler), () => Native.EnableSdkAuthenticationErrors());
+            }
+        }
+
+        // ── Feature flags (BACKLOG D446) ─────────────────────────────────────
+
+        /// <summary>
+        /// A flag's value for this player, or <paramref name="defaultValue"/>
+        /// before the first answer, for a flag Joryio did not send, before
+        /// Initialize, or without tracking consent. Never waits for the
+        /// network. The first read of a value in a session logs an exposure.
+        /// Numbers read as double, objects as Dictionary&lt;string, object&gt;,
+        /// arrays as List&lt;object&gt;.
+        /// </summary>
+        public static object GetFlag(string key, object defaultValue)
+        {
+            if (string.IsNullOrEmpty(key)) return defaultValue;
+            return Read(nameof(GetFlag), () => JoryioJson.ParseValue(Native.GetFlag(key, JoryioJson.SerializeValue(defaultValue))), defaultValue);
+        }
+
+        /// <summary>A boolean flag, or <paramref name="defaultValue"/> (also for a flag of another type).</summary>
+        public static bool GetBoolFlag(string key, bool defaultValue)
+        {
+            if (string.IsNullOrEmpty(key)) return defaultValue;
+            return Read(nameof(GetBoolFlag), () => Native.GetBoolFlag(key, defaultValue), defaultValue);
+        }
+
+        /// <summary>A string flag, or <paramref name="defaultValue"/>.</summary>
+        public static string GetStringFlag(string key, string defaultValue)
+        {
+            if (string.IsNullOrEmpty(key)) return defaultValue;
+            return Read(nameof(GetStringFlag), () => Native.GetStringFlag(key, defaultValue ?? string.Empty), defaultValue);
+        }
+
+        /// <summary>A number flag, or <paramref name="defaultValue"/>.</summary>
+        public static double GetNumberFlag(string key, double defaultValue)
+        {
+            if (string.IsNullOrEmpty(key)) return defaultValue;
+            return Read(nameof(GetNumberFlag), () => Native.GetNumberFlag(key, defaultValue), defaultValue);
+        }
+
+        /// <summary>
+        /// A JSON flag as JSON text, or <paramref name="defaultJson"/> - for
+        /// <c>JsonUtility.FromJson</c> or your own parser.
+        /// </summary>
+        public static string GetJsonFlag(string key, string defaultJson)
+        {
+            if (string.IsNullOrEmpty(key)) return defaultJson;
+            return Read(nameof(GetJsonFlag), () =>
+            {
+                var json = Native.GetJsonFlag(key, string.IsNullOrEmpty(defaultJson) ? "null" : defaultJson);
+                return json == "null" && defaultJson == null ? null : json;
+            }, defaultJson);
+        }
+
+        /// <summary>
+        /// A JSON object flag read into <typeparamref name="T"/> with
+        /// <c>JsonUtility</c>, or <paramref name="defaultValue"/> when it is
+        /// missing or does not read.
+        /// </summary>
+        public static T GetJsonFlag<T>(string key, T defaultValue)
+        {
+            var json = GetJsonFlag(key, (string)null);
+            if (string.IsNullOrEmpty(json) || json == "null") return defaultValue;
+            try
+            {
+                var value = JsonUtility.FromJson<T>(json);
+                return value == null ? defaultValue : value;
+            }
+            catch (Exception)
+            {
+                return defaultValue;
+            }
+        }
+
+        /// <summary>Every flag held for this player, key -> value. Logs no exposure.</summary>
+        public static Dictionary<string, object> GetAllFlags()
+        {
+            return Read<Dictionary<string, object>>(nameof(GetAllFlags), () => JoryioJson.ParseValue(Native.GetAllFlags()) as Dictionary<string, object>, null)
+                ?? new Dictionary<string, object>();
+        }
+
+        /// <summary>Fetch the flags now; <paramref name="onDone"/> runs on the main thread when the answer is in (or the request failed).</summary>
+        public static void RefreshFlags(Action onDone = null)
+        {
+            Action<bool> settle = Once<bool>(_ => onDone?.Invoke());
+            if (!Ready(nameof(RefreshFlags))) { settle(false); return; }
+            Ask(nameof(RefreshFlags), id => Native.RefreshFlags(id), _ => settle(true), () => settle(false));
+        }
+
+        private static readonly object FlagsLock = new object();
+        private static readonly List<Action<string[]>> FlagsListeners = new List<Action<string[]>>();
+        private static bool _flagsUpdatesEnabled;
+
+        /// <summary>
+        /// <paramref name="callback"/> is called on the main thread with the
+        /// keys whose value changed. Dispose the result to stop. Safe before
+        /// Initialize: it starts hearing updates once the SDK starts.
+        /// </summary>
+        public static IDisposable OnFlagsUpdated(Action<string[]> callback)
+        {
+            if (callback == null) return new FlagsListener(null);
+            lock (FlagsLock) FlagsListeners.Add(callback);
+            if (_initialized) EnableFlagsUpdatesIfListened();
+            return new FlagsListener(callback);
+        }
+
+        private static void EnableFlagsUpdatesIfListened()
+        {
+            lock (FlagsLock)
+            {
+                if (_flagsUpdatesEnabled || FlagsListeners.Count == 0) return;
+                _flagsUpdatesEnabled = true;
+            }
+            Call(nameof(OnFlagsUpdated), () => Native.EnableFlagsUpdates());
+        }
+
+        /// <summary>From the native bridges (JoryioCallbackReceiver.OnFlagsUpdated).</summary>
+        internal static void DeliverFlagsUpdated(string[] keys)
+        {
+            Action<string[]>[] listeners;
+            lock (FlagsLock) listeners = FlagsListeners.ToArray();
+            foreach (var listener in listeners)
+            {
+                try { listener(keys); }
+                catch (Exception e) { Debug.LogError($"[Joryio] OnFlagsUpdated callback threw: {e}"); }
+            }
+        }
+
+        private sealed class FlagsListener : IDisposable
+        {
+            private Action<string[]> _callback;
+            internal FlagsListener(Action<string[]> callback) { _callback = callback; }
+
+            public void Dispose()
+            {
+                var cb = _callback;
+                _callback = null;
+                if (cb == null) return;
+                lock (FlagsLock) FlagsListeners.Remove(cb);
             }
         }
 

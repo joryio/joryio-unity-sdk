@@ -10,7 +10,7 @@ namespace Joryio.Runtime
     /// come from card campaigns and the journey step "Add card".
     ///
     /// Data only: Unity has no native view inside a game scene, so the game
-    /// draws the feed itself from <see cref="JoryioSDK.GetCards(Action{JoryioCardFeedState})"/>
+    /// draws the feed itself from <see cref="JoryioSDK.GetCards(Action{JoryioCardFeed})"/>
     /// and reports with MarkCardViewed / MarkCardRead / MarkCardClicked /
     /// DismissCard. Fetching, caching, the rate limit, consent, an anonymous
     /// player's device state, the silent push and the reports are the native
@@ -25,7 +25,11 @@ namespace Joryio.Runtime
         /// <summary>How long the feed is served from the device cache before it is asked for again - the same on every Joryio SDK.</summary>
         public const int CARD_FEED_TTL_SECONDS = 300;
 
-        private static Action<JoryioCardFeedState> _onCardsUpdated;
+        // The OnCardsUpdated handlers, in subscription order (main thread).
+        private static readonly List<Action<JoryioCardFeed>> _cardsHandlers = new List<Action<JoryioCardFeed>>();
+
+        /// <summary>Whether a game handler is subscribed (Initialize switches the native updates on for one held before it).</summary>
+        private static bool HasCardsHandlers => _cardsHandlers.Count > 0;
 
         /// <summary>
         /// The player's card feed - pinned first, newest first - with the
@@ -33,18 +37,18 @@ namespace Joryio.Runtime
         /// CARD_FEED_TTL_SECONDS. Answers the empty feed before Initialize or
         /// in the Editor.
         /// </summary>
-        public static void GetCards(Action<JoryioCardFeedState> onResult) => GetCards(null, onResult);
+        public static void GetCards(Action<JoryioCardFeed> onResult) => GetCards(null, onResult);
 
         /// <summary>
         /// The page after <paramref name="cursor"/> (a feed's NextCursor; null
         /// for the feed). The native SDK adds the page to the cached feed.
         /// </summary>
-        public static void GetCards(string cursor, Action<JoryioCardFeedState> onResult)
+        public static void GetCards(string cursor, Action<JoryioCardFeed> onResult)
         {
             var settle = Once(onResult);
-            if (!Ready(nameof(GetCards))) { settle(JoryioCardFeedState.Empty); return; }
+            if (!Ready(nameof(GetCards))) { settle(JoryioCardFeed.Empty); return; }
             var c = cursor ?? string.Empty;
-            Ask(nameof(GetCards), id => Native.GetCards(c, id), v => settle(JoryioCardJson.ParseFeed(v)), () => settle(JoryioCardFeedState.Empty));
+            Ask(nameof(GetCards), id => Native.GetCards(c, id), v => settle(JoryioCardJson.ParseFeed(v)), () => settle(JoryioCardFeed.Empty));
         }
 
         /// <summary>Unread cards, from the native cache (never a network call): the badge. 0 before Initialize.</summary>
@@ -74,34 +78,42 @@ namespace Joryio.Runtime
         }
 
         /// <summary>
-        /// Raised with the whole feed whenever it changes (a refresh, a report,
-        /// an identity change). The native updates are switched on with the
-        /// first handler and off with the last.
+        /// Calls <paramref name="handler"/> with the whole feed whenever it
+        /// changes (a refresh, a report, an identity change). Returns a
+        /// <see cref="JoryioSubscription"/>: Cancel() it (or Dispose it)
+        /// to stop - the same subscription and the same cancel on every Joryio
+        /// SDK. The native updates are switched on with the first handler and
+        /// off with the last; a handler added before Initialize is kept and
+        /// switched on by Initialize.
         /// </summary>
-        public static event Action<JoryioCardFeedState> OnCardsUpdated
+        public static JoryioSubscription OnCardsUpdated(Action<JoryioCardFeed> handler)
         {
-            add
-            {
-                var first = _onCardsUpdated == null;
-                _onCardsUpdated += value;
-                // Before Initialize the handler is kept; Initialize switches the updates on.
-                if (first && _onCardsUpdated != null && _initialized) Call(nameof(OnCardsUpdated), () => Native.EnableCardsUpdates());
-            }
-            remove
-            {
-                var had = _onCardsUpdated != null;
-                _onCardsUpdated -= value;
-                if (had && _onCardsUpdated == null && _initialized) Call(nameof(OnCardsUpdated), () => Native.DisableCardsUpdates());
-            }
+            if (handler == null) return new JoryioSubscription(null);
+            var first = !HasCardsHandlers;
+            _cardsHandlers.Add(handler);
+            if (first && _initialized) Call(nameof(OnCardsUpdated), () => Native.EnableCardsUpdates());
+            return new JoryioSubscription(() => RemoveCardsHandler(handler));
+        }
+
+        private static void RemoveCardsHandler(Action<JoryioCardFeed> handler)
+        {
+            // By reference, so the same lambda subscribed twice is two subscriptions.
+            var i = _cardsHandlers.FindIndex(h => ReferenceEquals(h, handler));
+            if (i < 0) return;
+            _cardsHandlers.RemoveAt(i);
+            if (!HasCardsHandlers && _initialized) Call(nameof(OnCardsUpdated), () => Native.DisableCardsUpdates());
         }
 
         internal static void RaiseCardsUpdated(string json)
         {
-            var handler = _onCardsUpdated;
-            if (handler == null) return;
+            if (!HasCardsHandlers) return;
             var feed = JoryioCardJson.ParseFeed(json);
-            try { handler(feed); }
-            catch (Exception e) { Debug.LogError($"[Joryio] OnCardsUpdated handler threw: {e}"); }
+            // A copy: a handler may cancel its own (or another) subscription.
+            foreach (var handler in _cardsHandlers.ToArray())
+            {
+                try { handler(feed); }
+                catch (Exception e) { Debug.LogError($"[Joryio] OnCardsUpdated handler threw: {e}"); }
+            }
         }
 
         private static void MarkCard(string method, string cardId, string action)
@@ -111,7 +123,7 @@ namespace Joryio.Runtime
         }
     }
 
-    /// <summary>One card of the player's feed.</summary>
+    /// <summary>One card of the player's feed - Card on the other Joryio SDKs.</summary>
     public sealed class JoryioCard
     {
         /// <summary>Stable id of this card for this player.</summary>
@@ -142,8 +154,8 @@ namespace Joryio.Runtime
         }
     }
 
-    /// <summary>The player's feed (or one page of it).</summary>
-    public sealed class JoryioCardFeedState
+    /// <summary>The player's feed (or one page of it) - CardFeed on the other Joryio SDKs.</summary>
+    public sealed class JoryioCardFeed
     {
         /// <summary>Pinned first, then newest first.</summary>
         public JoryioCard[] Cards { get; }
@@ -154,21 +166,21 @@ namespace Joryio.Runtime
         /// <summary>server (read / dismissed kept per player on the server) or device (an anonymous player: this device keeps them).</summary>
         public string StateScope { get; }
 
-        internal JoryioCardFeedState(JoryioCard[] cards, int unreadCount, string nextCursor, string stateScope)
+        internal JoryioCardFeed(JoryioCard[] cards, int unreadCount, string nextCursor, string stateScope)
         {
             Cards = cards; UnreadCount = unreadCount; NextCursor = nextCursor; StateScope = stateScope;
         }
 
-        internal static JoryioCardFeedState Empty => new JoryioCardFeedState(new JoryioCard[0], 0, null, "server");
+        internal static JoryioCardFeed Empty => new JoryioCardFeed(new JoryioCard[0], 0, null, "server");
     }
 
     /// <summary>The bridge JSON (CardFeed.toJson on iOS / Android) to the C# objects. A bad answer is the empty feed.</summary>
     internal static class JoryioCardJson
     {
-        internal static JoryioCardFeedState ParseFeed(string json)
+        internal static JoryioCardFeed ParseFeed(string json)
         {
-            if (string.IsNullOrEmpty(json)) return JoryioCardFeedState.Empty;
-            if (!(MiniJson.Parse(json) is Dictionary<string, object> root)) return JoryioCardFeedState.Empty;
+            if (string.IsNullOrEmpty(json)) return JoryioCardFeed.Empty;
+            if (!(MiniJson.Parse(json) is Dictionary<string, object> root)) return JoryioCardFeed.Empty;
             var cards = new List<JoryioCard>();
             if (root.TryGetValue("cards", out var raw) && raw is List<object> list)
             {
@@ -182,7 +194,7 @@ namespace Joryio.Runtime
                 }
             }
             var unread = root.TryGetValue("unreadCount", out var u) && u is double d && d > 0 ? (int)d : 0;
-            return new JoryioCardFeedState(cards.ToArray(), unread, Str(root, "nextCursor"), Str(root, "stateScope") == "device" ? "device" : "server");
+            return new JoryioCardFeed(cards.ToArray(), unread, Str(root, "nextCursor"), Str(root, "stateScope") == "device" ? "device" : "server");
         }
 
         private static string Str(Dictionary<string, object> o, string k) => o.TryGetValue(k, out var v) ? v as string : null;

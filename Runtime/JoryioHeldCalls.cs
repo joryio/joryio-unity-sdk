@@ -464,9 +464,9 @@ namespace Joryio.Runtime
                 _initialized = true;
                 RememberConfiguredConsent(config);
                 // OnPlacementsUpdated subscribed before Initialize (D444).
-                if (_onPlacementsUpdated != null) Call(nameof(OnPlacementsUpdated), () => Native.EnablePlacementsUpdates());
+                if (HasPlacementsHandlers) Call(nameof(OnPlacementsUpdated), () => Native.EnablePlacementsUpdates());
                 // OnCardsUpdated subscribed before Initialize (D444 Phase 3).
-                if (_onCardsUpdated != null) Call(nameof(OnCardsUpdated), () => Native.EnableCardsUpdates());
+                if (HasCardsHandlers) Call(nameof(OnCardsUpdated), () => Native.EnableCardsUpdates());
                 // SetLinkHandler called before Initialize.
                 if (_linkHandler != null) Call(nameof(SetLinkHandler), () => Native.EnableLinkHandler());
 

@@ -47,7 +47,11 @@ namespace Joryio.Runtime
             return id.Length > 128 ? id.Substring(0, 128) : id;
         }
 
-        private static Action<Dictionary<string, JoryioPlacement>> _onPlacementsUpdated;
+        // The OnPlacementsUpdated handlers, in subscription order (main thread).
+        private static readonly List<Action<Dictionary<string, JoryioPlacement>>> _placementsHandlers = new List<Action<Dictionary<string, JoryioPlacement>>>();
+
+        /// <summary>Whether a game handler is subscribed (Initialize switches the native updates on for one held before it).</summary>
+        private static bool HasPlacementsHandlers => _placementsHandlers.Count > 0;
 
         /// <summary>
         /// The placements for <paramref name="placementKeys"/>, to draw in the
@@ -76,29 +80,33 @@ namespace Joryio.Runtime
         }
 
         /// <summary>
-        /// Raised with the placements whose content changed. The native updates
-        /// are switched on with the first handler and off with the last.
+        /// Calls <paramref name="handler"/> with the placements whose content
+        /// changed. Returns a <see cref="JoryioSubscription"/>: Cancel() it (or
+        /// Dispose it) to stop - the same subscription and cancel on every
+        /// Joryio SDK. The native updates are switched on with the first handler
+        /// and off with the last; a handler added before Initialize is kept and
+        /// switched on by Initialize.
         /// </summary>
-        public static event Action<Dictionary<string, JoryioPlacement>> OnPlacementsUpdated
+        public static JoryioSubscription OnPlacementsUpdated(Action<Dictionary<string, JoryioPlacement>> handler)
         {
-            add
-            {
-                var first = _onPlacementsUpdated == null;
-                _onPlacementsUpdated += value;
-                // Before Initialize the handler is kept; Initialize switches the updates on.
-                if (first && _initialized) Call(nameof(OnPlacementsUpdated), () => Native.EnablePlacementsUpdates());
-            }
-            remove
-            {
-                _onPlacementsUpdated -= value;
-                if (_onPlacementsUpdated == null && _initialized) Call(nameof(OnPlacementsUpdated), () => Native.DisablePlacementsUpdates());
-            }
+            if (handler == null) return new JoryioSubscription(null);
+            var first = !HasPlacementsHandlers;
+            _placementsHandlers.Add(handler);
+            if (first && _initialized) Call(nameof(OnPlacementsUpdated), () => Native.EnablePlacementsUpdates());
+            return new JoryioSubscription(() => RemovePlacementsHandler(handler));
+        }
+
+        private static void RemovePlacementsHandler(Action<Dictionary<string, JoryioPlacement>> handler)
+        {
+            var i = _placementsHandlers.FindIndex(h => ReferenceEquals(h, handler));
+            if (i < 0) return;
+            _placementsHandlers.RemoveAt(i);
+            if (!HasPlacementsHandlers && _initialized) Call(nameof(OnPlacementsUpdated), () => Native.DisablePlacementsUpdates());
         }
 
         internal static void RaisePlacementsUpdated(string json)
         {
-            var handler = _onPlacementsUpdated;
-            if (handler == null) return;
+            if (!HasPlacementsHandlers) return;
             Dictionary<string, JoryioPlacement> placements;
             try { placements = JoryioPlacementJson.ParsePlacements(json); }
             catch (Exception e)
@@ -106,8 +114,13 @@ namespace Joryio.Runtime
                 Debug.LogError($"[Joryio] Could not parse placements: {e.Message}");
                 return;
             }
-            try { handler(placements); }
-            catch (Exception e) { Debug.LogError($"[Joryio] OnPlacementsUpdated handler threw: {e}"); }
+            // A copy: a handler may cancel its own (or another) subscription. Each
+            // handler runs on its own, so one that throws does not silence the rest.
+            foreach (var handler in _placementsHandlers.ToArray())
+            {
+                try { handler(placements); }
+                catch (Exception e) { Debug.LogError($"[Joryio] OnPlacementsUpdated handler threw: {e}"); }
+            }
         }
 
         internal static void MarkPlacement(string placementKey, string itemId, string action, string elementId)

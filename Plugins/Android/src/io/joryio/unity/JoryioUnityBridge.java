@@ -627,7 +627,7 @@ public final class JoryioUnityBridge {
 
     private static final Map<String, io.joryio.sdk.placements.Placement> lastPlacements =
         Collections.synchronizedMap(new HashMap<String, io.joryio.sdk.placements.Placement>());
-    private static java.io.Closeable placementsSubscription;
+    private static io.joryio.sdk.JoryioSubscription placementsSubscription;
     private static final Object placementsLock = new Object();
 
     private static List<String> placementKeys(String keysJson) {
@@ -685,11 +685,7 @@ public final class JoryioUnityBridge {
     public static void disablePlacementsUpdates() {
         synchronized (placementsLock) {
             if (placementsSubscription == null) return;
-            try {
-                placementsSubscription.close();
-            } catch (Exception ignored) {
-                // Closing a listener cannot fail in a way the game can act on.
-            }
+            placementsSubscription.cancel();
             placementsSubscription = null;
         }
     }
@@ -724,7 +720,7 @@ public final class JoryioUnityBridge {
 
     private static final Map<String, io.joryio.sdk.cards.Card> lastCards =
         Collections.synchronizedMap(new HashMap<String, io.joryio.sdk.cards.Card>());
-    private static java.io.Closeable cardsSubscription;
+    private static io.joryio.sdk.JoryioSubscription cardsSubscription;
     private static final Object cardsLock = new Object();
 
     /** page: a cursor page (added to what was handed out) rather than the whole feed (which replaces it). */
@@ -786,11 +782,7 @@ public final class JoryioUnityBridge {
     public static void disableCardsUpdates() {
         synchronized (cardsLock) {
             if (cardsSubscription == null) return;
-            try {
-                cardsSubscription.close();
-            } catch (Exception ignored) {
-                // Closing a listener cannot fail in a way the game can act on.
-            }
+            cardsSubscription.cancel();
             cardsSubscription = null;
         }
     }
@@ -897,7 +889,7 @@ public final class JoryioUnityBridge {
     }
 
     /** One native subscription for the process; C# fans it out to its listeners. */
-    private static java.io.Closeable flagsSubscription;
+    private static io.joryio.sdk.JoryioSubscription flagsSubscription;
     private static final Object FLAGS_LOCK = new Object();
 
     public static void enableFlagsUpdates() {

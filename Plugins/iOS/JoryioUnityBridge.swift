@@ -1,7 +1,8 @@
 import Foundation
 import UIKit
 import UserNotifications
-import Joryio
+// attachCardFeedListener is SDK-internal (SPI): a game listens with JoryioSDK.OnCardsUpdated.
+@_spi(JoryioInternal) import Joryio
 
 //
 //  Unity <-> Joryio iOS bridge.
@@ -880,7 +881,7 @@ public func joryio_sync_in_app_campaigns() {
 
 private var lastPlacements: [String: Placement] = [:]
 private let placementsLock = NSLock()
-private var placementsSubscription: PlacementsSubscription?
+private var placementsSubscription: JoryioSubscription?
 
 private func placementsJson(_ map: [String: Placement]) -> String {
     placementsLock.lock()
@@ -948,7 +949,7 @@ public func joryio_mark_placement(_ placementKey: UnsafePointer<CChar>?, _ itemI
 
 private var lastCards: [String: Card] = [:]
 private let cardsLock = NSLock()
-private var cardsSubscription: CardsSubscription?
+private var cardsSubscription: JoryioSubscription?
 
 /// `page`: a cursor page (added to what was handed out) rather than the whole feed (which replaces it).
 private func cardsJson(_ feed: CardFeed, page: Bool) -> String {
@@ -1134,7 +1135,7 @@ public func joryio_refresh_flags(_ requestId: Int32) {
 }
 
 /// One native subscription for the process; C# fans it out to its listeners.
-private var flagsSubscription: FlagsSubscription?
+private var flagsSubscription: JoryioSubscription?
 
 @_cdecl("joryio_enable_flags_updates")
 public func joryio_enable_flags_updates() {

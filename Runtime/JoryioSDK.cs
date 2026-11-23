@@ -1114,15 +1114,26 @@ namespace Joryio.Runtime
 
         /// <summary>
         /// <paramref name="callback"/> is called on the main thread with the
-        /// keys whose value changed. Dispose the result to stop. Safe before
-        /// Initialize: it starts hearing updates once the SDK starts.
+        /// keys whose value changed. Returns a <see cref="JoryioSubscription"/>:
+        /// Cancel() it (or Dispose it) to stop - the same subscription and
+        /// cancel on every Joryio SDK. Safe before Initialize: it starts hearing
+        /// updates once the SDK starts.
         /// </summary>
-        public static IDisposable OnFlagsUpdated(Action<string[]> callback)
+        public static JoryioSubscription OnFlagsUpdated(Action<string[]> callback)
         {
-            if (callback == null) return new FlagsListener(null);
+            if (callback == null) return new JoryioSubscription(null);
             lock (FlagsLock) FlagsListeners.Add(callback);
             if (_initialized) EnableFlagsUpdatesIfListened();
-            return new FlagsListener(callback);
+            return new JoryioSubscription(() => RemoveFlagsListener(callback));
+        }
+
+        private static void RemoveFlagsListener(Action<string[]> callback)
+        {
+            lock (FlagsLock)
+            {
+                var i = FlagsListeners.FindIndex(l => ReferenceEquals(l, callback));
+                if (i >= 0) FlagsListeners.RemoveAt(i);
+            }
         }
 
         private static void EnableFlagsUpdatesIfListened()
@@ -1144,20 +1155,6 @@ namespace Joryio.Runtime
             {
                 try { listener(keys); }
                 catch (Exception e) { Debug.LogError($"[Joryio] OnFlagsUpdated callback threw: {e}"); }
-            }
-        }
-
-        private sealed class FlagsListener : IDisposable
-        {
-            private Action<string[]> _callback;
-            internal FlagsListener(Action<string[]> callback) { _callback = callback; }
-
-            public void Dispose()
-            {
-                var cb = _callback;
-                _callback = null;
-                if (cb == null) return;
-                lock (FlagsLock) FlagsListeners.Remove(cb);
             }
         }
 

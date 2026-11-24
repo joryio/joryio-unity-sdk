@@ -32,7 +32,7 @@ namespace Joryio.Runtime
         /// Android SDK once logged a hardcoded "v1.0.0" while it was on 1.1.0 -
         /// a second copy is how that happens.
         /// </summary>
-        public const string SdkVersion = "1.4.0-beta.9";
+        public const string SdkVersion = "1.4.0-beta.10";
 
         /// <summary>
         /// How long (ms) an in-app message must have been on screen before it

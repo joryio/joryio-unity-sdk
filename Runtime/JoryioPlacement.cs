@@ -40,6 +40,16 @@ namespace Joryio.Runtime
         /// <summary>Width of a product card the other SDKs' placement views draw when the app sets none (points / dp / CSS px).</summary>
         public const int PLACEMENT_PRODUCT_CARD_WIDTH = 160;
 
+        /// <summary>
+        /// "Show when" (BACKLOG D465): the moment a placement campaign's content is
+        /// revealed on a screen - the <c>kind</c> values the wire may carry. The native
+        /// SDK (iOS / Android) holds the content and hands it over at its moment: an item
+        /// reaches <see cref="GetPlacements"/> / <see cref="OnPlacementsUpdated"/> only once
+        /// revealed. Apps honour <c>load</c>, <c>seconds</c> (foreground seconds on the
+        /// screen) and <c>event</c>; <c>scroll</c> / <c>exit</c> are web-only and never shown.
+        /// </summary>
+        public static readonly string[] SHOW_WHEN_KINDS = { "load", "seconds", "scroll", "exit", "event" };
+
         /// <summary>The elementId to report a product card's click with: <c>product:&lt;id&gt;</c>, at most 128 characters.</summary>
         public static string PlacementProductElementId(string productId)
         {

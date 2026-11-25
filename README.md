@@ -65,6 +65,33 @@ The package ships no prebuilt native binaries. The native SDKs are resolved by c
 | Android | `io.joryio:joryio-android:1.4.0` and `org.jetbrains.kotlin:kotlin-stdlib` (Maven Central), from `Editor/JoryioDependencies.xml` | EDM4U and Gradle |
 | iOS | Swift package `https://github.com/joryio/joryio-ios-sdk` at exactly 1.4.0, product `Joryio`, linked into `UnityFramework` | the package's iOS post-build step, then Xcode |
 
+#### Testing a beta on Android
+
+During a beta (`1.4.0-beta.N`), the Android dependency `io.joryio:joryio-android:<beta>` is not on Maven Central - a beta is published there only when it is promoted to a final release - so EDM4U cannot resolve it from Maven Central. Use the local Maven repository attached to the beta instead:
+
+1. Download `joryio-android-<beta>-maven-repo.zip` from the matching pre-release of `joryio-android-sdk` on GitHub.
+2. Unzip it into a folder of its own (the zip has no top-level folder; its root holds `README.txt` and `io/`):
+   `unzip joryio-android-<beta>-maven-repo.zip -d joryio-android-<beta>-maven-repo`
+3. Add that folder, by absolute path, as a repository. In an EDM4U dependencies file of your own (for example `Assets/Editor/JoryioBetaDependencies.xml`):
+
+   ```xml
+   <dependencies>
+     <androidPackages>
+       <androidPackage spec="io.joryio:joryio-android:<beta>">
+         <repositories>
+           <repository>file:///absolute/path/to/joryio-android-<beta>-maven-repo</repository>
+         </repositories>
+       </androidPackage>
+     </androidPackages>
+   </dependencies>
+   ```
+
+   or in Gradle (`mainTemplate.gradle` / `settingsTemplate.gradle`), before `google()` / `mavenCentral()`:
+   `maven { url = uri("/absolute/path/to/joryio-android-<beta>-maven-repo") }`
+4. Run **Assets → External Dependency Manager → Android Resolver → Resolve** again. `README.txt` inside the zip has the same steps.
+
+Remove the extra repository once you move to the final release, which resolves from Maven Central.
+
 Resolving by coordinate lets Gradle and Swift Package Manager reconcile libraries the SDK shares with your other plugins (OkHttp, Kotlin, SQLite and so on) instead of colliding at build time. `kotlin-stdlib` is listed because the Java bridge compiles against Kotlin types; Gradle picks the newest one any plugin asks for.
 
 Install EDM4U if your project does not have it yet, then on Android run **Assets → External Dependency Manager → Android Resolver → Resolve**. On iOS there is nothing to resolve in Unity: the post-build step adds the Swift package to the exported Xcode project, and Xcode downloads it the first time it opens or builds the project. CocoaPods is not involved, so the SDK is unaffected by CocoaPods trunk going read-only on 2 December 2026. Upgrading from a version that used the `Joryio/Core` pod: build the iOS player once with **Replace** rather than **Append**, and delete any `<iosPod name="Joryio/...">` line from your own EDM4U files.

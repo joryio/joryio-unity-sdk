@@ -2,6 +2,10 @@
 
 ## 1.4.0 - 2026-11-18
 
+Fixed (1.4.0-beta.14), inherited from the native SDKs (iOS and Android 1.4.0-beta.14): a flag exposure batch whose request failed is no longer sent a second time a few milliseconds later. It goes to the native outbox as having failed once: its first retry waits the first backoff step (4 s), or the answer's `Retry-After` when that is longer (at most 300 s), also across a relaunch of the game. The bridge only reads flags; the native SDK sends and retries the exposures, so nothing changes in the bridge.
+
+Note for betas: during a beta, the Android dependency `io.joryio:joryio-android:<beta>` (for example `1.4.0-beta.14`) is not on Maven Central, so EDM4U cannot resolve it from there. Download `joryio-android-<beta>-maven-repo.zip` from the `joryio-android-sdk` GitHub pre-release, unzip it into a folder of its own, and add that folder as a repository - see "Testing a beta on Android" in the README.
+
 Fixed (1.4.0-beta.13), inherited from the native SDKs: more than 100 flag exposures read before one flush are sent as several requests of at most 100 instead of only the first 100. Nothing changes in the bridge.
 
 Fixed (1.4.0-beta.13), inherited from the native SDKs (iOS and Android 1.4.0-beta.13): a flag exposure batch whose request failed (no answer, a 5xx, a 408 or a 429) goes to the native SDK's persisted write outbox with the same `idempotencyKey` and is sent again from there, also after a relaunch; its "already sent" mark is stored only once the server takes it - beta.12 stored it before the request and never retried, so a dropped connection lost the exposure for the session. Wiping the data, a withdrawn consent and an opt-out discard the waiting batches. Nothing changes in the bridge.

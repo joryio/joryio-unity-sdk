@@ -2,6 +2,8 @@
 
 ## 1.4.0 - 2026-11-18
 
+Fixed (1.4.0-beta.15), inherited from the native SDKs (Android 1.4.0-beta.15): on Android, the flags refresh at app foreground is no longer lost to a `NullPointerException` when the foreground arrives while the SDK is still being constructed (the bridge initializes it from Unity's thread, not the Android main thread). A 408 on the flag exposures request is no longer re-sent at once by OkHttp; the batch waits in the native outbox. Nothing changes in the bridge, and iOS is unchanged.
+
 Fixed (1.4.0-beta.14), inherited from the native SDKs (iOS and Android 1.4.0-beta.14): a flag exposure batch whose request failed is no longer sent a second time a few milliseconds later. It goes to the native outbox as having failed once: its first retry waits the first backoff step (4 s), or the answer's `Retry-After` when that is longer (at most 300 s), also across a relaunch of the game. The bridge only reads flags; the native SDK sends and retries the exposures, so nothing changes in the bridge.
 
 Note for betas: during a beta, the Android dependency `io.joryio:joryio-android:<beta>` (for example `1.4.0-beta.14`) is not on Maven Central, so EDM4U cannot resolve it from there. Download `joryio-android-<beta>-maven-repo.zip` from the `joryio-android-sdk` GitHub pre-release, unzip it into a folder of its own, and add that folder as a repository - see "Testing a beta on Android" in the README.

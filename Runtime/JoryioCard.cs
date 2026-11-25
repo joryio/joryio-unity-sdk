@@ -22,6 +22,9 @@ namespace Joryio.Runtime
         /// <summary>The feed goes to the network at most once per this many seconds; extra calls coalesce - the same on every Joryio SDK.</summary>
         public const int CARD_MIN_REFRESH_SECONDS = 30;
 
+        /// <summary>After a feed request that got no answer (or a 5xx) the next may go after this many seconds; a 429 keeps the full window - the same on every Joryio SDK (the native SDK applies it).</summary>
+        public const int CARD_RETRY_AFTER_FAILURE_SECONDS = 3;
+
         /// <summary>How long the feed is served from the device cache before it is asked for again - the same on every Joryio SDK.</summary>
         public const int CARD_FEED_TTL_SECONDS = 300;
 

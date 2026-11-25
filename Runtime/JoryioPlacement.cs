@@ -28,6 +28,9 @@ namespace Joryio.Runtime
         /// <summary>A placement key is fetched from the network at most once per this many seconds - the same on every Joryio SDK.</summary>
         public const int PLACEMENT_MIN_REFRESH_SECONDS = 30;
 
+        /// <summary>After a request that got no answer (or a 5xx) its keys may go again after this many seconds; a 429 keeps the full window - the same on every Joryio SDK (the native SDK applies it).</summary>
+        public const int PLACEMENT_RETRY_AFTER_FAILURE_SECONDS = 3;
+
         /// <summary>
         /// A product card's tap is reported as <c>clicked</c> with the elementId
         /// <c>product:&lt;product id&gt;</c> (at most 128 characters) - the same on every

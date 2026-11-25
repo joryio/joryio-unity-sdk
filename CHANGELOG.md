@@ -2,6 +2,10 @@
 
 ## 1.4.0 - 2026-11-18
 
+Fixed (1.4.0-beta.13), inherited from the native SDKs: more than 100 flag exposures read before one flush are sent as several requests of at most 100 instead of only the first 100. Nothing changes in the bridge.
+
+Fixed (1.4.0-beta.13), inherited from the native SDKs (iOS and Android 1.4.0-beta.13): a flag exposure batch whose request failed (no answer, a 5xx, a 408 or a 429) goes to the native SDK's persisted write outbox with the same `idempotencyKey` and is sent again from there, also after a relaunch; its "already sent" mark is stored only once the server takes it - beta.12 stored it before the request and never retried, so a dropped connection lost the exposure for the session. Wiping the data, a withdrawn consent and an opt-out discard the waiting batches. Nothing changes in the bridge.
+
 Fixed (1.4.0-beta.12), inherited from the native SDKs (iOS and Android 1.4.0-beta.12): flag exposures are sent once per person, flag and variant per session across a relaunch of the game - the native SDKs keep the session's sent marks on the device and clear them on `Reset()` and `Identify()` of a different user. Nothing changes in the bridge.
 
 Fixed (1.4.0-beta.12), inherited from the native SDKs (iOS and Android 1.4.0-beta.12): on Android the first flags, placements or cards request after the game had been idle could fail at once and never reach the server (a 1.4.0-beta.11 regression); on both platforms a placements or cards request that got no answer no longer holds the next one back for 30 s, only 3 s; and every flag exposures batch carries an `idempotencyKey`, so the server records a batch sent twice once. New constants `JoryioSDK.PLACEMENT_RETRY_AFTER_FAILURE_SECONDS` and `JoryioSDK.CARD_RETRY_AFTER_FAILURE_SECONDS` (3) mirror the native ones. Nothing else changes in the bridge.

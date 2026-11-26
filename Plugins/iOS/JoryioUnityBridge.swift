@@ -1,7 +1,8 @@
 import Foundation
 import UIKit
 import UserNotifications
-import Joryio
+// attachCardFeedListener is SDK-internal (SPI): a game listens with JoryioSDK.OnCardsUpdated.
+@_spi(JoryioInternal) import Joryio
 
 //
 //  Unity <-> Joryio iOS bridge.
@@ -142,11 +143,20 @@ public func joryio_initialize(
         // nil, as the Android bridge passes null: the SDK derives the level
         // from enableDebug (contract 58), so it follows the SDK's own rule
         // rather than a copy of it pinned here.
-        logLevel: nil
+        logLevel: nil,
+        // iOS only: an https link on one of the game's associated domains goes
+        // to its own universal-link handling instead of Safari.
+        forwardUniversalLinks: raw["forwardUniversalLinks"] as? Bool ?? false
     )
 
     // Before initialize, so a token Apple delivers in response to the SDK's own
     // registration (or the one below) is not missed.
+    // Every request names this bridge and its version (D427):
+    // X-Joryio-SDK-Wrapper: unity + X-Joryio-SDK-Wrapper-Version. C# sends its
+    // package version in every config (JoryioConfig.ToJson).
+    if let wrapperVersion = raw["sdkWrapperVersion"] as? String {
+        Joryio.setSdkWrapper(name: "unity", version: wrapperVersion)
+    }
     JoryioUnityAppDelegateListener.shared.install()
     Joryio.shared.initialize(sdkKey: str(sdkKey), apiHost: str(apiHost), config: config)
     JoryioUnityAppDelegateListener.shared.refreshTokenIfAuthorized()
@@ -248,6 +258,12 @@ public func joryio_identify(_ userId: UnsafePointer<CChar>?) {
 @_cdecl("joryio_reset")
 public func joryio_reset() {
     Joryio.shared.reset()
+}
+
+/// Replies "true" when the id was adopted, "false" when it was refused (a plain reset).
+@_cdecl("joryio_reset_to")
+public func joryio_reset_to(_ anonymousId: UnsafePointer<CChar>?, _ requestId: Int32) {
+    Joryio.shared.resetTo(str(anonymousId)) { adopted in reply(requestId, adopted ? "true" : "false") }
 }
 
 @_cdecl("joryio_flush")
@@ -408,6 +424,7 @@ public func joryio_submit_in_app_form(
         if let m = r.message { body["message"] = m }
         if let redirect = r.redirect { body["redirect"] = redirect }
         if let errors = r.errors { body["errors"] = errors }
+        if let reason = r.reason { body["reason"] = reason }
         reply(requestId, jsonString(body))
     }
 }
@@ -426,6 +443,15 @@ public func joryio_evaluate_in_app_campaigns() {
 @_cdecl("joryio_add_alias")
 public func joryio_add_alias(_ aliasLabel: UnsafePointer<CChar>?, _ aliasName: UnsafePointer<CChar>?) {
     Joryio.shared.addAlias(str(aliasLabel), name: str(aliasName))
+}
+
+/// Click-link identity: the URL that opened the app, passed through to the
+/// native SDK unchanged. Native reads `jr_t` and applies the rules
+/// (identified, opted out, consent, once per token).
+@_cdecl("joryio_identify_from_link")
+public func joryio_identify_from_link(_ url: UnsafePointer<CChar>?) {
+    guard let parsed = URL(string: str(url)) else { return }
+    Joryio.shared.identifyFromLink(parsed)
 }
 
 @_cdecl("joryio_set_attributes")
@@ -847,7 +873,274 @@ public func joryio_sync_in_app_campaigns() {
     Task { await Joryio.shared.syncInAppCampaigns() }
 }
 
+// MARK: - Placements (D444)
+//
+// The native SDK fetches, caches, rate-limits and reports. The bridge hands
+// C# the data as JSON and routes C#'s Mark* calls to the native objects it
+// last handed out - so every report passes the native identity check.
+
+private var lastPlacements: [String: Placement] = [:]
+private let placementsLock = NSLock()
+private var placementsSubscription: JoryioSubscription?
+
+private func placementsJson(_ map: [String: Placement]) -> String {
+    placementsLock.lock()
+    for (k, p) in map { lastPlacements[k] = p }
+    placementsLock.unlock()
+    return jsonString(map.mapValues { $0.toJson() })
+}
+
+@_cdecl("joryio_get_placements")
+public func joryio_get_placements(_ keysJson: UnsafePointer<CChar>?, _ requestId: Int32) {
+    let keys = parseJsonArray(str(keysJson))
+    Joryio.shared.getPlacements(keys) { map in
+        reply(requestId, placementsJson(map))
+    }
+}
+
+@_cdecl("joryio_refresh_placements")
+public func joryio_refresh_placements(_ keysJson: UnsafePointer<CChar>?) {
+    let raw = str(keysJson)
+    Joryio.shared.refreshPlacements(raw.isEmpty ? nil : parseJsonArray(raw))
+}
+
+@_cdecl("joryio_enable_placements_updates")
+public func joryio_enable_placements_updates() {
+    guard placementsSubscription == nil else { return }
+    placementsSubscription = Joryio.shared.onPlacementsUpdated { map in
+        send("OnPlacementsUpdated", placementsJson(map))
+    }
+}
+
+@_cdecl("joryio_disable_placements_updates")
+public func joryio_disable_placements_updates() {
+    placementsSubscription?.cancel()
+    placementsSubscription = nil
+}
+
+@_cdecl("joryio_mark_placement")
+public func joryio_mark_placement(_ placementKey: UnsafePointer<CChar>?, _ itemId: UnsafePointer<CChar>?, _ action: UnsafePointer<CChar>?, _ elementId: UnsafePointer<CChar>?) {
+    let key = str(placementKey), id = str(itemId), act = str(action), element = str(elementId)
+    placementsLock.lock()
+    let placement = lastPlacements[key]
+    placementsLock.unlock()
+    guard let placement else { return }
+    if act == "control" {
+        placement.markDisplayed()
+        return
+    }
+    guard let item = placement.items.first(where: { $0.id == id }) else { return }
+    switch act {
+    case "displayed": item.markDisplayed()
+    case "clicked": item.markClicked(elementId: element.isEmpty ? nil : element)
+    case "dismissed": item.markDismissed()
+    default: break
+    }
+}
+
+// MARK: - Content cards (D444 Phase 3)
+//
+// The native SDK fetches, caches, rate-limits, keeps the anonymous visitor's
+// device state and reports. The bridge hands C# the feed as JSON
+// (CardFeed.toJson, no delivery tokens) and routes C#'s reports to the native
+// Card values it last handed out - so a report carries the card's own token
+// and passes the native identity check. An id the bridge never handed out
+// goes to the id overload (the native SDK looks it up).
+
+private var lastCards: [String: Card] = [:]
+private let cardsLock = NSLock()
+private var cardsSubscription: JoryioSubscription?
+
+/// `page`: a cursor page (added to what was handed out) rather than the whole feed (which replaces it).
+private func cardsJson(_ feed: CardFeed, page: Bool) -> String {
+    cardsLock.lock()
+    if !page { lastCards.removeAll() }
+    for card in feed.cards { lastCards[card.id] = card }
+    cardsLock.unlock()
+    return jsonString(feed.toJson())
+}
+
+/// `cursor`: a feed's nextCursor for the next page, "" for the feed.
+@_cdecl("joryio_get_cards")
+public func joryio_get_cards(_ cursor: UnsafePointer<CChar>?, _ requestId: Int32) {
+    let raw = str(cursor)
+    let c: String? = raw.isEmpty ? nil : raw
+    Joryio.shared.getCards(cursor: c) { feed in
+        reply(requestId, cardsJson(feed, page: c != nil))
+    }
+}
+
+/// From the native cache, never a network call.
+@_cdecl("joryio_get_unread_card_count")
+public func joryio_get_unread_card_count() -> Int32 {
+    Int32(clamping: Joryio.shared.getUnreadCardCount())
+}
+
+/// `action`: viewed | read | clicked | dismissed (the wire values of POST /v1/in-app/track).
+@_cdecl("joryio_mark_card")
+public func joryio_mark_card(_ cardId: UnsafePointer<CChar>?, _ action: UnsafePointer<CChar>?) {
+    let id = str(cardId), act = str(action)
+    guard !id.isEmpty else { return }
+    cardsLock.lock()
+    let card = lastCards[id]
+    cardsLock.unlock()
+    switch act {
+    case "viewed": if let card { Joryio.shared.markCardViewed(card) } else { Joryio.shared.markCardViewed(id) }
+    case "read": if let card { Joryio.shared.markCardRead(card) } else { Joryio.shared.markCardRead(id) }
+    case "clicked": if let card { Joryio.shared.markCardClicked(card) } else { Joryio.shared.markCardClicked(id) }
+    case "dismissed": if let card { Joryio.shared.dismissCard(card) } else { Joryio.shared.dismissCard(id) }
+    default: break
+    }
+}
+
+@_cdecl("joryio_refresh_cards")
+public func joryio_refresh_cards() {
+    Joryio.shared.refreshCards()
+}
+
+@_cdecl("joryio_enable_cards_updates")
+public func joryio_enable_cards_updates() {
+    guard cardsSubscription == nil else { return }
+    // nil before initialize(): Initialize switches the updates on again.
+    cardsSubscription = Joryio.shared.attachCardFeedListener { feed in
+        send("OnCardsUpdated", cardsJson(feed, page: false))
+    }
+}
+
+@_cdecl("joryio_disable_cards_updates")
+public func joryio_disable_cards_updates() {
+    cardsSubscription?.cancel()
+    cardsSubscription = nil
+}
+
+// MARK: - Links (SetLinkHandler)
+
+/// Links waiting for the C# handler, by id; oldest dropped past the cap. A
+/// link C# took stays here so its OpenDefault() can still run it later.
+private var pendingLinks: [String: JoryioLink] = [:]
+private var pendingLinkOrder: [String] = []
+private var nextLinkId = 0
+private let maxPendingLinks = 32
+
+/// C# set a link handler: every link the native SDK is about to open goes to
+/// C# first (OnLink) and waits for joryio_complete_link. The native handler
+/// takes the link at once - UnitySendMessage cannot answer - and C# hands a
+/// declined one back. App-wide in the native SDK, so it works before Initialize.
+@_cdecl("joryio_enable_link_handler")
+public func joryio_enable_link_handler() {
+    Joryio.shared.setLinkHandler { link in
+        nextLinkId += 1
+        let id = "l\(nextLinkId)"
+        pendingLinks[id] = link
+        pendingLinkOrder.append(id)
+        while pendingLinkOrder.count > maxPendingLinks {
+            pendingLinks[pendingLinkOrder.removeFirst()] = nil
+        }
+        var body: [String: Any] = [
+            "linkId": id,
+            "url": link.url.absoluteString,
+            "source": link.source.rawValue,
+            "isAppDeepLink": link.isAppDeepLink,
+        ]
+        if let v = link.campaignId { body["campaignId"] = v }
+        if let v = link.placementKey { body["placementKey"] = v }
+        if let v = link.itemId { body["itemId"] = v }
+        if let v = link.cardId { body["cardId"] = v }
+        send("OnLink", jsonString(body))
+        return true
+    }
+}
+
+@_cdecl("joryio_disable_link_handler")
+public func joryio_disable_link_handler() {
+    Joryio.shared.clearLinkHandler()
+    DispatchQueue.main.async {
+        pendingLinks.removeAll()
+        pendingLinkOrder.removeAll()
+    }
+}
+
+/// C#'s answer: handled false opens the link as the SDK does without a handler.
+@_cdecl("joryio_complete_link")
+public func joryio_complete_link(_ linkId: UnsafePointer<CChar>?, _ handled: Bool) {
+    let id = str(linkId)
+    DispatchQueue.main.async {
+        guard let link = pendingLinks.removeValue(forKey: id) else { return }
+        pendingLinkOrder.removeAll { $0 == id }
+        if !handled { link.openDefault() }
+    }
+}
+
 @_cdecl("joryio_reset_displayed_campaigns")
 public func joryio_reset_displayed_campaigns() {
     Joryio.shared.resetDisplayedCampaigns()
+}
+
+// MARK: - Feature flags (BACKLOG D446)
+//
+// Every getter passes the game's default to the native getter and returns its
+// answer, so the native SDK decides (value, or default) and logs the exposure
+// exactly as it does for a Swift caller. Values of any type cross as JSON
+// text; the typed getters cross as Bool / Double / String.
+
+private func parseJsonValue(_ raw: String) -> Any? {
+    guard !raw.isEmpty, let data = raw.data(using: .utf8),
+          let value = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else { return nil }
+    return value is NSNull ? nil : value
+}
+
+private func jsonValueString(_ value: Any?) -> String {
+    guard let value, !(value is NSNull),
+          let data = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]),
+          let s = String(data: data, encoding: .utf8) else { return "null" }
+    return s
+}
+
+@_cdecl("joryio_get_flag")
+public func joryio_get_flag(_ key: UnsafePointer<CChar>?, _ defaultJson: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>? {
+    cstr(jsonValueString(Joryio.shared.getFlag(str(key), default: parseJsonValue(str(defaultJson)))))
+}
+
+@_cdecl("joryio_get_bool_flag")
+public func joryio_get_bool_flag(_ key: UnsafePointer<CChar>?, _ defaultValue: Bool) -> Bool {
+    Joryio.shared.getBoolFlag(str(key), default: defaultValue)
+}
+
+@_cdecl("joryio_get_string_flag")
+public func joryio_get_string_flag(_ key: UnsafePointer<CChar>?, _ defaultValue: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>? {
+    cstr(Joryio.shared.getStringFlag(str(key), default: str(defaultValue)))
+}
+
+@_cdecl("joryio_get_number_flag")
+public func joryio_get_number_flag(_ key: UnsafePointer<CChar>?, _ defaultValue: Double) -> Double {
+    Joryio.shared.getNumberFlag(str(key), default: defaultValue)
+}
+
+@_cdecl("joryio_get_json_flag")
+public func joryio_get_json_flag(_ key: UnsafePointer<CChar>?, _ defaultJson: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>? {
+    cstr(jsonValueString(Joryio.shared.getJsonFlag(str(key), default: parseJsonValue(str(defaultJson)))))
+}
+
+/// Every flag as one JSON object. Logs no exposure.
+@_cdecl("joryio_get_all_flags")
+public func joryio_get_all_flags() -> UnsafeMutablePointer<CChar>? {
+    let all = Joryio.shared.getAllFlags()
+    return cstr(all.isEmpty ? "{}" : jsonValueString(all))
+}
+
+/// Answers "true" through the request id once the answer is in (or the request failed).
+@_cdecl("joryio_refresh_flags")
+public func joryio_refresh_flags(_ requestId: Int32) {
+    Joryio.shared.refreshFlags { reply(requestId, "true") }
+}
+
+/// One native subscription for the process; C# fans it out to its listeners.
+private var flagsSubscription: JoryioSubscription?
+
+@_cdecl("joryio_enable_flags_updates")
+public func joryio_enable_flags_updates() {
+    guard flagsSubscription == nil else { return }
+    flagsSubscription = Joryio.shared.onFlagsUpdated { keys in
+        send("OnFlagsUpdated", jsonValueString(keys))
+    }
 }

@@ -35,7 +35,7 @@ The Unity SDK is a thin layer over the native Joryio [iOS](https://github.com/jo
 **From Git** (recommended): in the Package Manager choose **+ → Add package from git URL** and enter the URL with the release tag:
 
 ```
-https://github.com/joryio/joryio-unity-sdk.git#1.3.3
+https://github.com/joryio/joryio-unity-sdk.git#1.4.0
 ```
 
 Or add it to `Packages/manifest.json` yourself:
@@ -43,7 +43,7 @@ Or add it to `Packages/manifest.json` yourself:
 ```json
 {
   "dependencies": {
-    "com.joryio.sdk": "https://github.com/joryio/joryio-unity-sdk.git#1.3.3"
+    "com.joryio.sdk": "https://github.com/joryio/joryio-unity-sdk.git#1.4.0"
   }
 }
 ```
@@ -62,8 +62,35 @@ The package ships no prebuilt native binaries. The native SDKs are resolved by c
 
 | Platform | Resolved dependency | Through |
 |----------|--------------------|---------|
-| Android | `io.joryio:joryio-android:1.3.3` and `org.jetbrains.kotlin:kotlin-stdlib` (Maven Central), from `Editor/JoryioDependencies.xml` | EDM4U and Gradle |
-| iOS | Swift package `https://github.com/joryio/joryio-ios-sdk` at exactly 1.3.3, product `Joryio`, linked into `UnityFramework` | the package's iOS post-build step, then Xcode |
+| Android | `io.joryio:joryio-android:1.4.0` and `org.jetbrains.kotlin:kotlin-stdlib` (Maven Central), from `Editor/JoryioDependencies.xml` | EDM4U and Gradle |
+| iOS | Swift package `https://github.com/joryio/joryio-ios-sdk` at exactly 1.4.0, product `Joryio`, linked into `UnityFramework` | the package's iOS post-build step, then Xcode |
+
+#### Testing a beta on Android
+
+During a beta (`1.4.0-beta.N`), the Android dependency `io.joryio:joryio-android:<beta>` is not on Maven Central - a beta is published there only when it is promoted to a final release - so EDM4U cannot resolve it from Maven Central. Use the local Maven repository attached to the beta instead:
+
+1. Download `joryio-android-<beta>-maven-repo.zip` from the matching pre-release of `joryio-android-sdk` on GitHub.
+2. Unzip it into a folder of its own (the zip has no top-level folder; its root holds `README.txt` and `io/`):
+   `unzip joryio-android-<beta>-maven-repo.zip -d joryio-android-<beta>-maven-repo`
+3. Add that folder, by absolute path, as a repository. In an EDM4U dependencies file of your own (for example `Assets/Editor/JoryioBetaDependencies.xml`):
+
+   ```xml
+   <dependencies>
+     <androidPackages>
+       <androidPackage spec="io.joryio:joryio-android:<beta>">
+         <repositories>
+           <repository>file:///absolute/path/to/joryio-android-<beta>-maven-repo</repository>
+         </repositories>
+       </androidPackage>
+     </androidPackages>
+   </dependencies>
+   ```
+
+   or in Gradle (`mainTemplate.gradle` / `settingsTemplate.gradle`), before `google()` / `mavenCentral()`:
+   `maven { url = uri("/absolute/path/to/joryio-android-<beta>-maven-repo") }`
+4. Run **Assets → External Dependency Manager → Android Resolver → Resolve** again. `README.txt` inside the zip has the same steps.
+
+Remove the extra repository once you move to the final release, which resolves from Maven Central.
 
 Resolving by coordinate lets Gradle and Swift Package Manager reconcile libraries the SDK shares with your other plugins (OkHttp, Kotlin, SQLite and so on) instead of colliding at build time. `kotlin-stdlib` is listed because the Java bridge compiles against Kotlin types; Gradle picks the newest one any plugin asks for.
 
@@ -188,7 +215,7 @@ The callback runs on the main thread, exactly once.
 
 **Who registers the device.** On **iOS** the SDK registers by itself: it receives the APNs device token from Unity's app controller once permission is granted - nothing to wire in an app delegate. On **Android** it registers by itself only when **Firebase Cloud Messaging is in the game** (the Firebase Unity SDK's Messaging package and `google-services.json`): the native SDK compiles against `firebase-messaging` but does not bring it, so without Firebase there is no FCM token, nothing is registered, and push stays off while analytics and in-app messaging work normally.
 
-**Android activity.** The prompt is shown from your game's activity. Unity 6 builds use `GameActivity` by default; earlier versions (and Unity 6 projects that select it) use the classic `UnityPlayerActivity`. Both are supported by the native SDK 1.3.3 that this package resolves: the callback reports the player's answer after the system dialog closes. Below Android 13 there is no runtime prompt and the callback answers at once with whether notifications are enabled.
+**Android activity.** The prompt is shown from your game's activity. Unity 6 builds use `GameActivity` by default; earlier versions (and Unity 6 projects that select it) use the classic `UnityPlayerActivity`. Both are supported by the native SDK 1.4.0 that this package resolves: the callback reports the player's answer after the system dialog closes. Below Android 13 there is no runtime prompt and the callback answers at once with whether notifications are enabled.
 
 ### If the game already has a push stack
 
@@ -272,7 +299,7 @@ The package resolves the UI-free native artifacts. For the native SDK to draw me
   ```xml
   <dependencies>
     <androidPackages>
-      <androidPackage spec="io.joryio:joryio-android-ui:1.3.3" />
+      <androidPackage spec="io.joryio:joryio-android-ui:1.4.0" />
     </androidPackages>
   </dependencies>
   ```
@@ -323,6 +350,16 @@ JoryioSDK.RemoveFromSubscriptionGroup("list_abc123", "email");
 ```
 
 Channels: `email`, `sms`, `whatsapp`, `push`, `viber`. Statuses: `optedIn`, `subscribed`, `unsubscribed`.
+
+## Recognise people who click your messages
+
+A tracked link in a Joryio message carries a `jr_t` token. When that link opens your game (with deep links set up in the Player settings), the player's sessions and events are attributed to the contact the message was sent to (attribution only - nothing is written to that contact's profile). `Initialize` does this for you: it checks `Application.absoluteURL` (the link that launched the game) and listens to `Application.deepLinkActivated`. For a URL that reaches the game another way, pass it yourself:
+
+```csharp
+JoryioSDK.IdentifyFromLink(url);
+```
+
+A URL without `jr_t` does nothing. The SDK acts only when tracking is allowed and nobody is identified on the device: a signed-in player is never re-attached by a link, an opt-out or a denied consent drops the token, and while consent is pending the token is kept in memory and sent once consent is granted. It is never stored on the device.
 
 ## Privacy controls
 

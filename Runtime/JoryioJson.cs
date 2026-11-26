@@ -187,5 +187,118 @@ namespace Joryio.Runtime
             }
             sb.Append('"');
         }
+
+        // ── Reading (feature flags, BACKLOG D446) ──────────────────────────
+
+        /// <summary>
+        /// Parse JSON text into plain values: Dictionary&lt;string, object&gt;,
+        /// List&lt;object&gt;, string, double, bool, or null. Null for empty or
+        /// malformed text - a flag value the bridge could not read is the
+        /// game's default, never an exception.
+        /// </summary>
+        internal static object ParseValue(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return null;
+            try
+            {
+                var i = 0;
+                var value = ReadValue(json, ref i, 0);
+                SkipWhitespace(json, ref i);
+                return i == json.Length ? value : null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static void SkipWhitespace(string s, ref int i)
+        {
+            while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+        }
+
+        private static object ReadValue(string s, ref int i, int depth)
+        {
+            if (depth > MaxDepth) throw new FormatException("too deep");
+            SkipWhitespace(s, ref i);
+            if (i >= s.Length) throw new FormatException("end of input");
+            var c = s[i];
+            if (c == '{')
+            {
+                i++;
+                var map = new Dictionary<string, object>();
+                SkipWhitespace(s, ref i);
+                if (i < s.Length && s[i] == '}') { i++; return map; }
+                while (true)
+                {
+                    SkipWhitespace(s, ref i);
+                    if (i >= s.Length || s[i] != '"') throw new FormatException("key");
+                    var key = ReadString(s, ref i);
+                    SkipWhitespace(s, ref i);
+                    if (i >= s.Length || s[i] != ':') throw new FormatException(":");
+                    i++;
+                    map[key] = ReadValue(s, ref i, depth + 1);
+                    SkipWhitespace(s, ref i);
+                    if (i < s.Length && s[i] == ',') { i++; continue; }
+                    if (i < s.Length && s[i] == '}') { i++; return map; }
+                    throw new FormatException("object");
+                }
+            }
+            if (c == '[')
+            {
+                i++;
+                var list = new List<object>();
+                SkipWhitespace(s, ref i);
+                if (i < s.Length && s[i] == ']') { i++; return list; }
+                while (true)
+                {
+                    list.Add(ReadValue(s, ref i, depth + 1));
+                    SkipWhitespace(s, ref i);
+                    if (i < s.Length && s[i] == ',') { i++; continue; }
+                    if (i < s.Length && s[i] == ']') { i++; return list; }
+                    throw new FormatException("array");
+                }
+            }
+            if (c == '"') return ReadString(s, ref i);
+            if (string.CompareOrdinal(s, i, "true", 0, 4) == 0) { i += 4; return true; }
+            if (string.CompareOrdinal(s, i, "false", 0, 5) == 0) { i += 5; return false; }
+            if (string.CompareOrdinal(s, i, "null", 0, 4) == 0) { i += 4; return null; }
+            var start = i;
+            while (i < s.Length && "+-0123456789.eE".IndexOf(s[i]) >= 0) i++;
+            if (i == start) throw new FormatException("value");
+            return double.Parse(s.Substring(start, i - start), NumberStyles.Float, CultureInfo.InvariantCulture);
+        }
+
+        private static string ReadString(string s, ref int i)
+        {
+            i++; // opening quote
+            var sb = new StringBuilder();
+            while (i < s.Length)
+            {
+                var c = s[i++];
+                if (c == '"') return sb.ToString();
+                if (c != '\\') { sb.Append(c); continue; }
+                if (i >= s.Length) break;
+                var e = s[i++];
+                switch (e)
+                {
+                    case '"': sb.Append('"'); break;
+                    case '\\': sb.Append('\\'); break;
+                    case '/': sb.Append('/'); break;
+                    case 'b': sb.Append('\b'); break;
+                    case 'f': sb.Append('\f'); break;
+                    case 'n': sb.Append('\n'); break;
+                    case 'r': sb.Append('\r'); break;
+                    case 't': sb.Append('\t'); break;
+                    case 'u':
+                        if (i + 4 > s.Length) throw new FormatException("escape");
+                        sb.Append((char)int.Parse(s.Substring(i, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture));
+                        i += 4;
+                        break;
+                    default: throw new FormatException("escape");
+                }
+            }
+            throw new FormatException("string");
+        }
     }
 }

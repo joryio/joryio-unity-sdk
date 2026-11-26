@@ -33,10 +33,20 @@ namespace Joryio.Runtime.Platform
 
         public void Identify(string userId) => Bridge.CallStatic("identify", userId);
         public void Reset() => Bridge.CallStatic("reset");
+        public void ResetTo(string anonymousId, int requestId) => Bridge.CallStatic("resetTo", anonymousId, requestId);
         public void Flush() => Bridge.CallStatic("flush");
         public string GetUserId() => Bridge.CallStatic<string>("getUserId");
         public string GetAnonymousId() => Bridge.CallStatic<string>("getAnonymousId");
+        public string GetFlag(string key, string defaultJson) => Bridge.CallStatic<string>("getFlag", key, defaultJson);
+        public bool GetBoolFlag(string key, bool defaultValue) => Bridge.CallStatic<bool>("getBoolFlag", key, defaultValue);
+        public string GetStringFlag(string key, string defaultValue) => Bridge.CallStatic<string>("getStringFlag", key, defaultValue);
+        public double GetNumberFlag(string key, double defaultValue) => Bridge.CallStatic<double>("getNumberFlag", key, defaultValue);
+        public string GetJsonFlag(string key, string defaultJson) => Bridge.CallStatic<string>("getJsonFlag", key, defaultJson);
+        public string GetAllFlags() => Bridge.CallStatic<string>("getAllFlags");
+        public void RefreshFlags(int requestId) => Bridge.CallStatic("refreshFlags", requestId);
+        public void EnableFlagsUpdates() => Bridge.CallStatic("enableFlagsUpdates");
         public void AddAlias(string aliasLabel, string aliasName) => Bridge.CallStatic("addAlias", aliasLabel, aliasName);
+        public void IdentifyFromLink(string url) => Bridge.CallStatic("identifyFromLink", url);
         public void SetAttributes(string attributesJson) => Bridge.CallStatic("setAttributes", attributesJson);
         public void SetAttribute(string key, string valueJson) => Bridge.CallStatic("setAttribute", key, valueJson);
         public void IncrementAttribute(string key, double by) => Bridge.CallStatic("incrementAttribute", key, by);
@@ -80,6 +90,24 @@ namespace Joryio.Runtime.Platform
         // typed argument - "" stands for "none" and the bridge maps it back.
         public void TrackInAppImpression(string campaignId, string action, string elementId) =>
             Bridge.CallStatic("trackInAppImpression", campaignId, action, elementId ?? string.Empty);
+
+        public void GetPlacements(string keysJson, int requestId) => Bridge.CallStatic("getPlacements", keysJson, requestId);
+        public void RefreshPlacements(string keysJson) => Bridge.CallStatic("refreshPlacements", keysJson ?? string.Empty);
+        public void EnablePlacementsUpdates() => Bridge.CallStatic("enablePlacementsUpdates");
+        public void DisablePlacementsUpdates() => Bridge.CallStatic("disablePlacementsUpdates");
+        public void MarkPlacement(string placementKey, string itemId, string action, string elementId) =>
+            Bridge.CallStatic("markPlacement", placementKey, itemId ?? string.Empty, action, elementId ?? string.Empty);
+
+        public void GetCards(string cursor, int requestId) => Bridge.CallStatic("getCards", cursor ?? string.Empty, requestId);
+        public int GetUnreadCardCount() => Bridge.CallStatic<int>("getUnreadCardCount");
+        public void MarkCard(string cardId, string action) => Bridge.CallStatic("markCard", cardId ?? string.Empty, action ?? string.Empty);
+        public void RefreshCards() => Bridge.CallStatic("refreshCards");
+        public void EnableCardsUpdates() => Bridge.CallStatic("enableCardsUpdates");
+        public void DisableCardsUpdates() => Bridge.CallStatic("disableCardsUpdates");
+
+        public void EnableLinkHandler() => Bridge.CallStatic("enableLinkHandler");
+        public void DisableLinkHandler() => Bridge.CallStatic("disableLinkHandler");
+        public void CompleteLink(string linkId, bool handled) => Bridge.CallStatic("completeLink", linkId ?? string.Empty, handled);
 
         public void SubmitInAppForm(string campaignId, string valuesJson, int requestId) =>
             Bridge.CallStatic("submitInAppForm", campaignId, valuesJson, requestId);

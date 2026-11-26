@@ -463,6 +463,12 @@ namespace Joryio.Runtime
                 Native.Initialize(sdkKey, apiHost, configJson);
                 _initialized = true;
                 RememberConfiguredConsent(config);
+                // OnPlacementsUpdated subscribed before Initialize (D444).
+                if (HasPlacementsHandlers) Call(nameof(OnPlacementsUpdated), () => Native.EnablePlacementsUpdates());
+                // OnCardsUpdated subscribed before Initialize (D444 Phase 3).
+                if (HasCardsHandlers) Call(nameof(OnCardsUpdated), () => Native.EnableCardsUpdates());
+                // SetLinkHandler called before Initialize.
+                if (_linkHandler != null) Call(nameof(SetLinkHandler), () => Native.EnableLinkHandler());
 
                 if (!loaded)
                 {
@@ -632,7 +638,7 @@ namespace Joryio.Runtime
         private static readonly string[] DataMethods =
         {
             nameof(Track), nameof(TrackScreen), nameof(SetAttributes), nameof(SetAttribute),
-            nameof(IncrementAttribute), nameof(UnsetAttribute), nameof(AddAlias), nameof(Flush),
+            nameof(IncrementAttribute), nameof(UnsetAttribute), nameof(AddAlias), nameof(IdentifyFromLink), nameof(Flush),
             nameof(TrackInAppImpression), nameof(SubmitInAppForm), nameof(SyncInAppCampaigns),
             nameof(EvaluateInAppCampaigns), nameof(ResetDisplayedCampaigns), nameof(UpdateBadgeCount),
             nameof(ClearBadge), nameof(ReportPushDelivered), nameof(TrackPushClick),

@@ -32,7 +32,7 @@ namespace Joryio.Runtime
         /// Android SDK once logged a hardcoded "v1.0.0" while it was on 1.1.0 -
         /// a second copy is how that happens.
         /// </summary>
-        public const string SdkVersion = "1.3.3";
+        public const string SdkVersion = "1.4.0";
 
         /// <summary>
         /// How long (ms) an in-app message must have been on screen before it
@@ -96,6 +96,11 @@ namespace Joryio.Runtime
             _consentBeforeInit = null;
             _lastConsent = null;
             _quietStartConsent = null;
+            lock (FlagsLock)
+            {
+                FlagsListeners.Clear();
+                _flagsUpdatesEnabled = false;
+            }
             lock (HeldLock)
             {
                 ResetHeldState();
@@ -153,6 +158,9 @@ namespace Joryio.Runtime
                 // Starts the native SDK and sends what was held before
                 // Initialize, in order (JoryioHeldCalls.cs).
                 StartNative(sdkKey, apiHost, config);
+                if (_initialized) WatchDeepLinks();
+                // Listeners added before Initialize start hearing updates now.
+                if (_initialized) EnableFlagsUpdatesIfListened();
             }
             catch (Exception e)
             {
@@ -284,6 +292,31 @@ namespace Joryio.Runtime
             Call(nameof(Reset), () => Native.Reset());
         }
 
+        /// <summary>
+        /// Reset, then adopt <paramref name="anonymousId"/> instead of a new
+        /// random id - for a game that keeps its own player id, so the SDK and
+        /// the game stay ONE visitor after a logout (BACKLOG D366). The native
+        /// SDK checks the id: 8 to 255 letters, digits, '.', '_', ':' or '-',
+        /// not the shape of a Joryio profile id (24 lowercase hex), not the
+        /// signed-in user id, and not the anonymous id held while a player is
+        /// signed in (that id is tied to their profile). A missing or refused
+        /// id is a plain Reset (a random id), so a logout is never skipped.
+        /// <paramref name="onResult"/> runs once on the main thread: true when
+        /// the id was adopted, false when it was refused or the call did not
+        /// run (not initialized, or dropped).
+        /// </summary>
+        public static void ResetTo(string anonymousId, Action<bool> onResult = null)
+        {
+            var settle = Once(onResult);
+            if (!Ready(nameof(ResetTo))) { settle(false); return; }
+            RetrySavedHeldCalls();
+            // Never a null across JNI (AndroidJavaException); empty is refused natively = Reset.
+            var id = anonymousId ?? string.Empty;
+            Call(nameof(ResetTo),
+                () => Ask(nameof(ResetTo), rid => Native.ResetTo(id, rid), v => settle(v == "true"), () => settle(false)),
+                onDropped: () => settle(false));
+        }
+
         public static void Flush()
         {
             if (!Ready(nameof(Flush))) return;
@@ -317,6 +350,80 @@ namespace Joryio.Runtime
         {
             if (!Ready(nameof(AddAlias), label, name)) return;
             Call(nameof(AddAlias), () => Native.AddAlias(label, name));
+        }
+
+        // ── Click-link identity ──────────────────────────────────────────────
+
+        /// <summary>The query parameter a tracked message link carries; the same on every SDK.</summary>
+        public const string ClickIdentityParam = "jr_t";
+
+        /// <summary>
+        /// Recognise the player who clicked a tracked link in a Joryio message.
+        /// When the URL carries the jr_t token the click redirect added, this
+        /// game's events are attributed to the contact the message was sent
+        /// to. Attribution only: the player is not identified and this profile
+        /// is never merged into the contact (only Identify does that).
+        /// Fire-and-forget; a URL without jr_t does nothing.
+        ///
+        /// Initialize already does this for you: it checks
+        /// Application.absoluteURL (the link that launched the game) and
+        /// listens to Application.deepLinkActivated. Call it yourself only for
+        /// a URL that reaches the game another way.
+        ///
+        /// Nothing happens when the player is identified, has opted out or
+        /// consent is denied; while consent is pending the token is held in
+        /// memory and sent when consent is granted. The same token is sent once
+        /// per launch. Before Initialize the call is ignored (as other data
+        /// calls are) - the launch URL is read by Initialize itself.
+        /// </summary>
+        /// <param name="url">The deep link / universal link / app link URL.</param>
+        public static void IdentifyFromLink(string url)
+        {
+            if (!HasClickIdentityParam(url)) return;
+            if (!Ready(nameof(IdentifyFromLink), url)) return;
+            Call(nameof(IdentifyFromLink), () => Native.IdentifyFromLink(url));
+        }
+
+        /// <summary>Whether the URL has a jr_t query parameter at all; native validates the value.</summary>
+        internal static bool HasClickIdentityParam(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return false;
+            var hash = url.IndexOf('#');
+            if (hash >= 0) url = url.Substring(0, hash);
+            var q = url.IndexOf('?');
+            if (q < 0) return false;
+            foreach (var pair in url.Substring(q + 1).Split('&'))
+            {
+                var eq = pair.IndexOf('=');
+                if (eq > 0 && pair.Substring(0, eq) == ClickIdentityParam) return true;
+            }
+            return false;
+        }
+
+        private static bool _watchingDeepLinks;
+
+        /// <summary>
+        /// At Initialize: the link that launched the game, and every link that
+        /// reaches it while it runs. Guarded: outside a player (the managed
+        /// tests) the engine calls are not available, and a deep-link hook is
+        /// never worth failing Initialize for.
+        /// </summary>
+        private static void WatchDeepLinks()
+        {
+            try
+            {
+                if (!_watchingDeepLinks)
+                {
+                    Application.deepLinkActivated += IdentifyFromLink;
+                    _watchingDeepLinks = true;
+                }
+                var launchUrl = Application.absoluteURL;
+                if (!string.IsNullOrEmpty(launchUrl)) IdentifyFromLink(launchUrl);
+            }
+            catch (Exception e)
+            {
+                Debug.Log($"[Joryio] Deep links are not watched here: {e.Message}");
+            }
         }
 
         /// <summary>
@@ -912,6 +1019,142 @@ namespace Joryio.Runtime
             if (handler != null && first)
             {
                 Call(nameof(SetSdkAuthenticationErrorHandler), () => Native.EnableSdkAuthenticationErrors());
+            }
+        }
+
+        // ── Feature flags (BACKLOG D446) ─────────────────────────────────────
+
+        /// <summary>
+        /// A flag's value for this player, or <paramref name="defaultValue"/>
+        /// before the first answer, for a flag Joryio did not send, before
+        /// Initialize, or without tracking consent. Never waits for the
+        /// network. The first read of a value in a session logs an exposure.
+        /// Numbers read as double, objects as Dictionary&lt;string, object&gt;,
+        /// arrays as List&lt;object&gt;.
+        /// </summary>
+        public static object GetFlag(string key, object defaultValue)
+        {
+            if (string.IsNullOrEmpty(key)) return defaultValue;
+            return Read(nameof(GetFlag), () => JoryioJson.ParseValue(Native.GetFlag(key, JoryioJson.SerializeValue(defaultValue))), defaultValue);
+        }
+
+        /// <summary>A boolean flag, or <paramref name="defaultValue"/> (also for a flag of another type).</summary>
+        public static bool GetBoolFlag(string key, bool defaultValue)
+        {
+            if (string.IsNullOrEmpty(key)) return defaultValue;
+            return Read(nameof(GetBoolFlag), () => Native.GetBoolFlag(key, defaultValue), defaultValue);
+        }
+
+        /// <summary>A string flag, or <paramref name="defaultValue"/>.</summary>
+        public static string GetStringFlag(string key, string defaultValue)
+        {
+            if (string.IsNullOrEmpty(key)) return defaultValue;
+            return Read(nameof(GetStringFlag), () => Native.GetStringFlag(key, defaultValue ?? string.Empty), defaultValue);
+        }
+
+        /// <summary>A number flag, or <paramref name="defaultValue"/>.</summary>
+        public static double GetNumberFlag(string key, double defaultValue)
+        {
+            if (string.IsNullOrEmpty(key)) return defaultValue;
+            return Read(nameof(GetNumberFlag), () => Native.GetNumberFlag(key, defaultValue), defaultValue);
+        }
+
+        /// <summary>
+        /// A JSON flag as JSON text, or <paramref name="defaultJson"/> - for
+        /// <c>JsonUtility.FromJson</c> or your own parser.
+        /// </summary>
+        public static string GetJsonFlag(string key, string defaultJson)
+        {
+            if (string.IsNullOrEmpty(key)) return defaultJson;
+            return Read(nameof(GetJsonFlag), () =>
+            {
+                var json = Native.GetJsonFlag(key, string.IsNullOrEmpty(defaultJson) ? "null" : defaultJson);
+                return json == "null" && defaultJson == null ? null : json;
+            }, defaultJson);
+        }
+
+        /// <summary>
+        /// A JSON object flag read into <typeparamref name="T"/> with
+        /// <c>JsonUtility</c>, or <paramref name="defaultValue"/> when it is
+        /// missing or does not read.
+        /// </summary>
+        public static T GetJsonFlag<T>(string key, T defaultValue)
+        {
+            var json = GetJsonFlag(key, (string)null);
+            if (string.IsNullOrEmpty(json) || json == "null") return defaultValue;
+            try
+            {
+                var value = JsonUtility.FromJson<T>(json);
+                return value == null ? defaultValue : value;
+            }
+            catch (Exception)
+            {
+                return defaultValue;
+            }
+        }
+
+        /// <summary>Every flag held for this player, key -> value. Logs no exposure.</summary>
+        public static Dictionary<string, object> GetAllFlags()
+        {
+            return Read<Dictionary<string, object>>(nameof(GetAllFlags), () => JoryioJson.ParseValue(Native.GetAllFlags()) as Dictionary<string, object>, null)
+                ?? new Dictionary<string, object>();
+        }
+
+        /// <summary>Fetch the flags now; <paramref name="onDone"/> runs on the main thread when the answer is in (or the request failed).</summary>
+        public static void RefreshFlags(Action onDone = null)
+        {
+            Action<bool> settle = Once<bool>(_ => onDone?.Invoke());
+            if (!Ready(nameof(RefreshFlags))) { settle(false); return; }
+            Ask(nameof(RefreshFlags), id => Native.RefreshFlags(id), _ => settle(true), () => settle(false));
+        }
+
+        private static readonly object FlagsLock = new object();
+        private static readonly List<Action<string[]>> FlagsListeners = new List<Action<string[]>>();
+        private static bool _flagsUpdatesEnabled;
+
+        /// <summary>
+        /// <paramref name="callback"/> is called on the main thread with the
+        /// keys whose value changed. Returns a <see cref="JoryioSubscription"/>:
+        /// Cancel() it (or Dispose it) to stop - the same subscription and
+        /// cancel on every Joryio SDK. Safe before Initialize: it starts hearing
+        /// updates once the SDK starts.
+        /// </summary>
+        public static JoryioSubscription OnFlagsUpdated(Action<string[]> callback)
+        {
+            if (callback == null) return new JoryioSubscription(null);
+            lock (FlagsLock) FlagsListeners.Add(callback);
+            if (_initialized) EnableFlagsUpdatesIfListened();
+            return new JoryioSubscription(() => RemoveFlagsListener(callback));
+        }
+
+        private static void RemoveFlagsListener(Action<string[]> callback)
+        {
+            lock (FlagsLock)
+            {
+                var i = FlagsListeners.FindIndex(l => ReferenceEquals(l, callback));
+                if (i >= 0) FlagsListeners.RemoveAt(i);
+            }
+        }
+
+        private static void EnableFlagsUpdatesIfListened()
+        {
+            lock (FlagsLock)
+            {
+                if (_flagsUpdatesEnabled || FlagsListeners.Count == 0) return;
+                _flagsUpdatesEnabled = true;
+            }
+            Call(nameof(OnFlagsUpdated), () => Native.EnableFlagsUpdates());
+        }
+
+        /// <summary>From the native bridges (JoryioCallbackReceiver.OnFlagsUpdated).</summary>
+        internal static void DeliverFlagsUpdated(string[] keys)
+        {
+            Action<string[]>[] listeners;
+            lock (FlagsLock) listeners = FlagsListeners.ToArray();
+            foreach (var listener in listeners)
+            {
+                try { listener(keys); }
+                catch (Exception e) { Debug.LogError($"[Joryio] OnFlagsUpdated callback threw: {e}"); }
             }
         }
 

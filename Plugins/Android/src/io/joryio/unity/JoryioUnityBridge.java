@@ -123,6 +123,10 @@ public final class JoryioUnityBridge {
             // natively in its place.
             raw.optBoolean("holdInAppMessagesForHandler", d.getHoldInAppMessagesForHandler())
         );
+        // Every request names this bridge and its version (D427):
+        // X-Joryio-SDK-Wrapper: unity + X-Joryio-SDK-Wrapper-Version. C#
+        // sends its package version in every config (JoryioConfig.ToJson).
+        Joryio.setSdkWrapper("unity", raw.optString("sdkWrapperVersion", null));
         Joryio.initialize(activity, sdkKey, apiHost, config);
     }
 
@@ -158,6 +162,14 @@ public final class JoryioUnityBridge {
 
     public static void reset() {
         Joryio.getInstance().reset();
+    }
+
+    /** Replies "true" when the id was adopted, "false" when it was refused (a plain reset). */
+    public static void resetTo(String anonymousId, final int requestId) {
+        Joryio.getInstance().resetTo(anonymousId, adopted -> {
+            reply(requestId, adopted ? "true" : "false");
+            return kotlin.Unit.INSTANCE;
+        });
     }
 
     public static void flush() {
@@ -321,6 +333,15 @@ public final class JoryioUnityBridge {
     /** A labelled alias. Works for an anonymous player too (SDK contract 2). */
     public static void addAlias(String aliasLabel, String aliasName) {
         Joryio.getInstance().addAlias(aliasLabel, aliasName);
+    }
+
+    /**
+     * Click-link identity: the URL that opened the app, passed through to the
+     * native SDK unchanged. Native reads {@code jr_t} and applies the rules
+     * (identified, opted out, consent, once per token).
+     */
+    public static void identifyFromLink(String url) {
+        Joryio.getInstance().identifyFromLink(url);
     }
 
     public static void setAttributes(String attributesJson) {
@@ -597,6 +618,307 @@ public final class JoryioUnityBridge {
     // ── In-app campaign control ──────────────────────────────────────────────
 
     public static void syncInAppCampaigns() { Joryio.getInstance().syncInAppCampaigns(); }
+
+    // ── Placements (D444) ─────────────────────────────────────────────────
+    // The native SDK fetches, caches, rate-limits and reports. The bridge
+    // hands C# the data as JSON and routes C#'s Mark* calls to the native
+    // objects it last handed out - so every report passes the native
+    // identity check.
+
+    private static final Map<String, io.joryio.sdk.placements.Placement> lastPlacements =
+        Collections.synchronizedMap(new HashMap<String, io.joryio.sdk.placements.Placement>());
+    private static io.joryio.sdk.JoryioSubscription placementsSubscription;
+    private static final Object placementsLock = new Object();
+
+    private static List<String> placementKeys(String keysJson) {
+        List<String> keys = new ArrayList<>();
+        if (keysJson == null || keysJson.isEmpty()) return keys;
+        try {
+            JSONArray arr = new JSONArray(keysJson);
+            for (int i = 0; i < arr.length(); i++) {
+                String k = arr.optString(i, null);
+                if (k != null) keys.add(k);
+            }
+        } catch (Exception ignored) {
+            // A malformed list asks for nothing.
+        }
+        return keys;
+    }
+
+    static String placementsJson(Map<String, io.joryio.sdk.placements.Placement> map) {
+        StringBuilder sb = new StringBuilder("{");
+        boolean first = true;
+        for (Map.Entry<String, io.joryio.sdk.placements.Placement> e : map.entrySet()) {
+            lastPlacements.put(e.getKey(), e.getValue());
+            if (!first) sb.append(',');
+            first = false;
+            sb.append(JSONObject.quote(e.getKey())).append(':').append(e.getValue().toJson());
+        }
+        return sb.append('}').toString();
+    }
+
+    public static void getPlacements(String keysJson, final int requestId) {
+        if (!Joryio.Companion.isInitialized()) {
+            reply(requestId, "{}");
+            return;
+        }
+        Joryio.getInstance().getPlacements(placementKeys(keysJson), map -> {
+            reply(requestId, placementsJson(map));
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    public static void refreshPlacements(String keysJson) {
+        Joryio.Companion.refreshPlacements(keysJson == null || keysJson.isEmpty() ? null : placementKeys(keysJson));
+    }
+
+    public static void enablePlacementsUpdates() {
+        synchronized (placementsLock) {
+            if (placementsSubscription != null || !Joryio.Companion.isInitialized()) return;
+            placementsSubscription = Joryio.getInstance().onPlacementsUpdated(map -> {
+                send("OnPlacementsUpdated", placementsJson(map));
+                return kotlin.Unit.INSTANCE;
+            });
+        }
+    }
+
+    public static void disablePlacementsUpdates() {
+        synchronized (placementsLock) {
+            if (placementsSubscription == null) return;
+            placementsSubscription.cancel();
+            placementsSubscription = null;
+        }
+    }
+
+    /** action: displayed | clicked | dismissed (an item) or control (the holdout spot). */
+    public static void markPlacement(String placementKey, String itemId, String action, String elementId) {
+        io.joryio.sdk.placements.Placement placement = lastPlacements.get(placementKey);
+        if (placement == null || action == null) return;
+        if ("control".equals(action)) {
+            placement.markDisplayed();
+            return;
+        }
+        for (io.joryio.sdk.placements.PlacementItem item : placement.getItems()) {
+            if (!item.getId().equals(itemId)) continue;
+            switch (action) {
+                case "displayed": item.markDisplayed(); break;
+                case "clicked": item.markClicked(elementId == null || elementId.isEmpty() ? null : elementId); break;
+                case "dismissed": item.markDismissed(); break;
+                default: break;
+            }
+            return;
+        }
+    }
+
+    // ── Content cards (D444 Phase 3) ──────────────────────────────────────
+    // The native SDK fetches, caches, rate-limits, keeps the anonymous
+    // visitor's device state and reports. The bridge hands C# the feed as JSON
+    // (CardFeed.toJson, no delivery tokens) and routes C#'s reports to the
+    // native Card objects it last handed out - so a report carries the card's
+    // own token and passes the native identity check. An id the bridge never
+    // handed out goes to the id overload (the native SDK looks it up).
+
+    private static final Map<String, io.joryio.sdk.cards.Card> lastCards =
+        Collections.synchronizedMap(new HashMap<String, io.joryio.sdk.cards.Card>());
+    private static io.joryio.sdk.JoryioSubscription cardsSubscription;
+    private static final Object cardsLock = new Object();
+
+    /** page: a cursor page (added to what was handed out) rather than the whole feed (which replaces it). */
+    static String cardsJson(io.joryio.sdk.cards.CardFeed feed, boolean page) {
+        synchronized (lastCards) {
+            if (!page) lastCards.clear();
+            for (io.joryio.sdk.cards.Card card : feed.getCards()) lastCards.put(card.getId(), card);
+        }
+        return feed.toJson();
+    }
+
+    /** cursor: a feed's nextCursor for the next page, "" for the feed. */
+    public static void getCards(String cursor, final int requestId) {
+        if (!Joryio.Companion.isInitialized()) {
+            reply(requestId, io.joryio.sdk.cards.CardFeed.Companion.getEMPTY().toJson());
+            return;
+        }
+        final String c = cursor == null || cursor.isEmpty() ? null : cursor;
+        Joryio.getInstance().getCards(c, feed -> {
+            reply(requestId, cardsJson(feed, c != null));
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /** From the native cache, never a network call. */
+    public static int getUnreadCardCount() {
+        return Joryio.Companion.isInitialized() ? Joryio.getInstance().getUnreadCardCount() : 0;
+    }
+
+    /** action: viewed | read | clicked | dismissed (the wire values of POST v1/in-app/track). */
+    public static void markCard(String cardId, String action) {
+        if (cardId == null || cardId.isEmpty() || action == null || !Joryio.Companion.isInitialized()) return;
+        Joryio sdk = Joryio.getInstance();
+        io.joryio.sdk.cards.Card card = lastCards.get(cardId);
+        switch (action) {
+            case "viewed": if (card != null) sdk.markCardViewed(card); else sdk.markCardViewed(cardId); break;
+            case "read": if (card != null) sdk.markCardRead(card); else sdk.markCardRead(cardId); break;
+            case "clicked": if (card != null) sdk.markCardClicked(card); else sdk.markCardClicked(cardId); break;
+            case "dismissed": if (card != null) sdk.dismissCard(card); else sdk.dismissCard(cardId); break;
+            default: break;
+        }
+    }
+
+    /** Queued until initialize() by the native companion, like refreshPlacements. */
+    public static void refreshCards() {
+        Joryio.Companion.refreshCards();
+    }
+
+    public static void enableCardsUpdates() {
+        synchronized (cardsLock) {
+            if (cardsSubscription != null || !Joryio.Companion.isInitialized()) return;
+            cardsSubscription = Joryio.getInstance().onCardsUpdated(feed -> {
+                send("OnCardsUpdated", cardsJson(feed, false));
+                return kotlin.Unit.INSTANCE;
+            });
+        }
+    }
+
+    public static void disableCardsUpdates() {
+        synchronized (cardsLock) {
+            if (cardsSubscription == null) return;
+            cardsSubscription.cancel();
+            cardsSubscription = null;
+        }
+    }
+
+    // ── Links (SetLinkHandler) ──────────────────────────────────────────────
+
+    /** Links waiting for the C# handler, oldest first; a link C# took stays so its OpenDefault() still works. */
+    private static final java.util.LinkedHashMap<String, io.joryio.sdk.core.JoryioLink> pendingLinks = new java.util.LinkedHashMap<>();
+    private static int nextLinkId = 0;
+    static final int MAX_PENDING_LINKS = 32;
+
+    /**
+     * C# set a link handler: every link the native SDK is about to open goes
+     * to C# first (OnLink) and waits for completeLink. The native handler
+     * takes the link at once - UnitySendMessage cannot answer - and C# hands a
+     * declined one back. App-wide in the native SDK, so it works before
+     * initialize.
+     */
+    public static void enableLinkHandler() {
+        Joryio.Companion.setLinkHandler(link -> {
+            String id;
+            synchronized (pendingLinks) {
+                nextLinkId += 1;
+                id = "l" + nextLinkId;
+                pendingLinks.put(id, link);
+                while (pendingLinks.size() > MAX_PENDING_LINKS) {
+                    pendingLinks.remove(pendingLinks.keySet().iterator().next());
+                }
+            }
+            send("OnLink", linkJson(id, link));
+            return true;
+        });
+    }
+
+    public static void disableLinkHandler() {
+        Joryio.Companion.clearLinkHandler();
+        synchronized (pendingLinks) { pendingLinks.clear(); }
+    }
+
+    /** C#'s answer: handled false opens the link as the SDK does without a handler. */
+    public static void completeLink(String linkId, boolean handled) {
+        io.joryio.sdk.core.JoryioLink link;
+        synchronized (pendingLinks) { link = pendingLinks.remove(linkId); }
+        if (link != null && !handled) link.openDefault();
+    }
+
+    static String linkJson(String id, io.joryio.sdk.core.JoryioLink link) {
+        JSONObject o = new JSONObject();
+        try {
+            o.put("linkId", id);
+            o.put("url", link.getUrl());
+            o.put("source", link.getSource().getWire());
+            o.put("isAppDeepLink", link.isAppDeepLink());
+            if (link.getCampaignId() != null) o.put("campaignId", link.getCampaignId());
+            if (link.getPlacementKey() != null) o.put("placementKey", link.getPlacementKey());
+            if (link.getItemId() != null) o.put("itemId", link.getItemId());
+            if (link.getCardId() != null) o.put("cardId", link.getCardId());
+        } catch (Exception ignored) {
+            // A malformed value must not take the callback thread down.
+        }
+        return o.toString();
+    }
+
+    // ── Feature flags (BACKLOG D446) ─────────────────────────────────────────
+    //
+    // Through the companion, which answers the in-code default before
+    // initialize() instead of throwing. Every getter hands the game's default
+    // to the native getter, so the native SDK decides (value or default) and
+    // logs the exposure exactly as for a Kotlin caller. Values of any type
+    // cross as JSON text, as on iOS.
+
+    public static String getFlag(String key, String defaultJson) {
+        return toJsonValue(Joryio.Companion.getFlag(key, parseJsonValue(defaultJson)));
+    }
+
+    public static boolean getBoolFlag(String key, boolean defaultValue) {
+        return Joryio.Companion.getBoolFlag(key, defaultValue);
+    }
+
+    public static String getStringFlag(String key, String defaultValue) {
+        return Joryio.Companion.getStringFlag(key, defaultValue);
+    }
+
+    public static double getNumberFlag(String key, double defaultValue) {
+        return Joryio.Companion.getNumberFlag(key, defaultValue);
+    }
+
+    public static String getJsonFlag(String key, String defaultJson) {
+        return toJsonValue(Joryio.Companion.getJsonFlag(key, parseJsonValue(defaultJson)));
+    }
+
+    /** Every flag as one JSON object. Logs no exposure. */
+    public static String getAllFlags() {
+        Map<String, Object> all = Joryio.Companion.getAllFlags();
+        return all.isEmpty() ? "{}" : toJsonValue(all);
+    }
+
+    /** Answers "true" through the request id once the answer is in (or the request failed). */
+    public static void refreshFlags(final int requestId) {
+        Joryio.Companion.refreshFlags(() -> {
+            reply(requestId, "true");
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /** One native subscription for the process; C# fans it out to its listeners. */
+    private static io.joryio.sdk.JoryioSubscription flagsSubscription;
+    private static final Object FLAGS_LOCK = new Object();
+
+    public static void enableFlagsUpdates() {
+        synchronized (FLAGS_LOCK) {
+            if (flagsSubscription != null) return;
+            flagsSubscription = Joryio.Companion.onFlagsUpdated(keys -> {
+                send("OnFlagsUpdated", new JSONArray(keys).toString());
+                return kotlin.Unit.INSTANCE;
+            });
+        }
+    }
+
+    /** A JSON text as plain Java values (Map, List, String, Number, Boolean, null). */
+    static Object parseJsonValue(String json) {
+        if (json == null || json.isEmpty()) return null;
+        try {
+            return toJava(new org.json.JSONTokener(json).nextValue());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** A plain Java value as JSON text; null -> "null". */
+    static String toJsonValue(Object value) {
+        if (value == null) return "null";
+        if (value instanceof String) return JSONObject.quote((String) value);
+        Object wrapped = JSONObject.wrap(value);
+        return wrapped == null ? "null" : wrapped.toString();
+    }
 
     public static void resetDisplayedCampaigns() { Joryio.getInstance().resetDisplayedCampaigns(); }
 

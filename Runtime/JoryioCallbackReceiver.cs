@@ -202,6 +202,21 @@ namespace Joryio.Runtime
             }
         }
 
+        // Invoked by name from native with the placements whose content changed
+        // (D444) - see OnInAppMessage for the [Preserve] reasoning.
+        [Preserve]
+        private void OnPlacementsUpdated(string json) => JoryioSDK.RaisePlacementsUpdated(json);
+
+        // Invoked by name from native with the whole card feed whenever it
+        // changes (D444 Phase 3) - see OnInAppMessage for the [Preserve] reasoning.
+        [Preserve]
+        private void OnCardsUpdated(string json) => JoryioSDK.RaiseCardsUpdated(json);
+
+        // Invoked by name from native with a link it is about to open
+        // (SetLinkHandler) - see OnInAppMessage for the [Preserve] reasoning.
+        [Preserve]
+        private void OnLink(string json) => JoryioSDK.RaiseLink(json);
+
         // Invoked by name from native when an ingest request is rejected under
         // SDK authentication - see OnInAppMessage for the [Preserve] reasoning.
         [Preserve]
@@ -221,6 +236,19 @@ namespace Joryio.Runtime
             error.endpoint = Blank(error.endpoint);
             try { handler(error); }
             catch (Exception e) { Debug.LogError($"[Joryio] SDK authentication error handler threw: {e}"); }
+        }
+
+        // Invoked by name from native with a JSON array of the flag keys whose
+        // value changed (BACKLOG D446) - see OnInAppMessage for [Preserve].
+        [Preserve]
+        private void OnFlagsUpdated(string json)
+        {
+            var keys = new List<string>();
+            if (JoryioJson.ParseValue(json) is List<object> list)
+            {
+                foreach (var k in list) if (k is string s) keys.Add(s);
+            }
+            JoryioSDK.DeliverFlagsUpdated(keys.ToArray());
         }
 
         // Only ever populated by JsonUtility, so every field here is unreferenced

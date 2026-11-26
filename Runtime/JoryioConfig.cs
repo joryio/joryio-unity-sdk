@@ -109,6 +109,17 @@ namespace Joryio.Runtime
         public bool HoldInAppMessagesForHandler { get; set; }
 
         /// <summary>
+        /// iOS ONLY (default false). An https link the native SDK opens - an
+        /// in-app message button, a push tap - whose host is one of the game's
+        /// associated domains (applinks: entries, *.domain wildcards included)
+        /// goes to the app's own universal-link handling instead of Safari.
+        /// Android routes verified App Links to the app by itself and ignores
+        /// it. A handler set with JoryioSDK.SetLinkHandler runs first. Same
+        /// option on iOS (forwardUniversalLinks) and React Native.
+        /// </summary>
+        public bool ForwardUniversalLinks { get; set; }
+
+        /// <summary>
         /// Turn on SDK authentication: every ingest request carries the token
         /// set here, or later through JoryioSDK.SetSdkAuthenticationToken. Only
         /// for workspaces with SDK authentication enabled in the dashboard.
@@ -184,8 +195,14 @@ namespace Joryio.Runtime
                 { "retryBackoffMs", RetryBackoffMs },
                 { "allowHtmlJsInAppMessages", AllowHtmlJsInAppMessages },
                 { "holdInAppMessagesForHandler", HoldInAppMessagesForHandler },
+                { "forwardUniversalLinks", ForwardUniversalLinks },
                 { "enableSdkAuthentication", EnableSdkAuthentication },
                 { "optOut", OptOut },
+                // Not a game setting: the native SDK sends it on every request
+                // as X-Joryio-SDK-Wrapper-Version, next to
+                // X-Joryio-SDK-Wrapper: unity (D427), so the dashboard shows
+                // the version of this package.
+                { "sdkWrapperVersion", JoryioSDK.SdkVersion },
             };
             // Absent rather than null: the bridges read "no key" as "generate
             // one", and an explicit null would have to be special-cased twice.
